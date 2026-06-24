@@ -1,9 +1,6 @@
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
-    Address, Env, Symbol,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, Symbol};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -96,20 +93,37 @@ fn test_bounty_count() {
 
 #[test]
 fn test_complete_bounty_updates_status() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor, verifier) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 1000;
+    let token_contract = env.register_stellar_asset_contract_v2(verifier.clone());
+    let reward_token = token_contract.address();
+    let token_admin = token::StellarAssetClient::new(&env, &reward_token);
+    token_admin.mint(&verifier, &reward_amount);
 
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_c"),
         &Symbol::new(&env, "desc_c"),
-        &1000,
-        &Address::generate(&env),
+        &reward_amount,
+        &reward_token,
     );
 
     client.claim_bounty(&contributor, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
     let bounty = client.get_bounty(&bounty_id).unwrap();
     assert_eq!(bounty.assignee.unwrap(), contributor);
+    assert_eq!(bounty.status, Symbol::new(&env, "completed"));
+
+    let contributor_record = client.get_contributor(&contributor).unwrap();
+    assert_eq!(contributor_record.reputation, 10);
+    assert_eq!(contributor_record.total_earned, reward_amount);
+    assert_eq!(contributor_record.contribution_count, 1);
+
+    let token_client = token::TokenClient::new(&env, &reward_token);
+    assert_eq!(token_client.balance(&contributor), reward_amount);
 }
