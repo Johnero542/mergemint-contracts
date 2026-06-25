@@ -72,6 +72,11 @@ impl MergeMintContract {
         verifier.require_auth();
 
         let bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+
+        if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
+            panic!("bounty is not in progress");
+        }
+
         let assignee = bounty.assignee.clone().expect("bounty has no assignee");
 
         let token = TokenClient::new(&env, &bounty.reward_token);

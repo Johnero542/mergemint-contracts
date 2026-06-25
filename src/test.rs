@@ -113,3 +113,22 @@ fn test_complete_bounty_updates_status() {
     let bounty = client.get_bounty(&bounty_id).unwrap();
     assert_eq!(bounty.assignee.unwrap(), contributor);
 }
+
+#[test]
+#[should_panic(expected = "bounty is not in progress")]
+fn test_complete_open_bounty_panics() {
+    let (env, creator, _contributor, verifier) = setup_test();
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_d"),
+        &Symbol::new(&env, "desc_d"),
+        &1000,
+        &Address::generate(&env),
+    );
+
+    client.complete_bounty(&verifier, &bounty_id);
+}
