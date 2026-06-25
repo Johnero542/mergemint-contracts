@@ -1,27 +1,26 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
+    testutils::Address as _,
     Address, Env, Symbol,
 };
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
 
-fn setup_test() -> (Env, Address, Address, Address) {
+fn setup_test() -> (Env, Address, Address) {
     let env = Env::default();
     let creator = Address::generate(&env);
     let contributor = Address::generate(&env);
-    let verifier = Address::generate(&env);
 
     env.mock_all_auths();
 
-    (env, creator, contributor, verifier)
+    (env, creator, contributor)
 }
 
 #[test]
 fn test_create_bounty() {
-    let (env, creator, _contributor, _verifier) = setup_test();
+    let (env, creator, _contributor) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
@@ -47,7 +46,7 @@ fn test_create_bounty() {
 
 #[test]
 fn test_claim_bounty() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
@@ -67,7 +66,7 @@ fn test_claim_bounty() {
 
 #[test]
 fn test_bounty_count() {
-    let (env, creator, _contributor, _verifier) = setup_test();
+    let (env, creator, _contributor) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
@@ -96,7 +95,7 @@ fn test_bounty_count() {
 
 #[test]
 fn test_complete_bounty_updates_status() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
