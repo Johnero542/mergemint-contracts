@@ -8,6 +8,7 @@ use crate::types::{Bounty, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
+const STATUS_COMPLETED: &str = "completed";
 
 fn generate_bounty_id(env: &Env) -> BytesN<32> {
     let count = storage::get_bounty_count(env);
@@ -90,8 +91,44 @@ impl MergeMintContract {
 
         storage::store_contributor(&env, &assignee, &contributor);
 
+        let mut completed_bounty = storage::get_bounty(&env, &bounty_id).unwrap();
+        completed_bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+        storage::store_bounty(&env, &bounty_id, &completed_bounty);
+
         events::emit_bounty_completed(&env, &bounty_id, &assignee);
         events::emit_reward_paid(&env, &bounty_id, &assignee, &bounty.reward_amount);
+    }
+
+    pub fn update_bounty(
+        env: Env,
+        creator: Address,
+        bounty_id: BytesN<32>,
+        new_reward_amount: i128,
+    ) {
+        creator.require_auth();
+
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+
+        if bounty.creator != creator {
+            panic!("only the creator can update a bounty");
+        }
+
+        let open = Symbol::new(&env, STATUS_OPEN);
+        let in_progress = Symbol::new(&env, STATUS_IN_PROGRESS);
+        let completed = Symbol::new(&env, STATUS_COMPLETED);
+
+        if bounty.status == in_progress {
+            panic!("cannot update a bounty that is in progress");
+        }
+        if bounty.status == completed {
+            panic!("cannot update a completed bounty");
+        }
+        if bounty.status != open {
+            panic!("bounty is not open");
+        }
+
+        bounty.reward_amount = new_reward_amount;
+        storage::store_bounty(&env, &bounty_id, &bounty);
     }
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
