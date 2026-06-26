@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
+    testutils::Address as _,
     Address, Env, Symbol,
 };
 
@@ -112,4 +112,28 @@ fn test_complete_bounty_updates_status() {
     client.claim_bounty(&contributor, &bounty_id);
     let bounty = client.get_bounty(&bounty_id).unwrap();
     assert_eq!(bounty.assignee.unwrap(), contributor);
+}
+
+// Issue 1: security-critical test — non-creator cannot cancel a bounty.
+// cancel_bounty will trigger an escrow refund once escrow is implemented,
+// so an unauthorised caller would be a fund-draining vulnerability.
+#[test]
+#[should_panic(expected = "not the bounty creator")]
+fn test_non_creator_cannot_cancel_bounty() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let attacker = Address::generate(&env);
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_d"),
+        &Symbol::new(&env, "desc_d"),
+        &1000,
+        &Address::generate(&env),
+    );
+
+    // Must panic: attacker is not the bounty creator.
+    client.cancel_bounty(&attacker, &bounty_id);
 }

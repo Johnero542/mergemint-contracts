@@ -8,11 +8,16 @@ use crate::types::{Bounty, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
+const STATUS_CANCELLED: &str = "cancelled";
 
 // Error message constants — used in explicit pre-condition checks below.
 mod errors {
     pub const BOUNTY_NOT_FOUND: &str = "bounty not found";
     pub const BOUNTY_HAS_NO_ASSIGNEE: &str = "bounty has no assignee";
+    pub const NOT_BOUNTY_CREATOR: &str = "not the bounty creator";
+    pub const BOUNTY_NOT_OPEN: &str = "bounty is not open";
+    pub const BOUNTY_NO_DEADLINE: &str = "bounty has no deadline";
+    pub const DEADLINE_NOT_PASSED: &str = "bounty deadline has not passed";
 }
 
 fn generate_bounty_id(env: &Env) -> BytesN<32> {
@@ -109,6 +114,31 @@ impl MergeMintContract {
 
         events::emit_bounty_completed(&env, &bounty_id, &assignee);
         events::emit_reward_paid(&env, &bounty_id, &assignee, &bounty.reward_amount);
+    }
+
+    /// Cancel an open bounty. Only the bounty creator is authorised.
+    /// Once escrow is implemented this will trigger a refund of escrowed tokens.
+    pub fn cancel_bounty(env: Env, caller: Address, bounty_id: BytesN<32>) {
+        caller.require_auth();
+
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+        };
+
+        // Auth guard: only the bounty creator may cancel.
+        if bounty.creator != caller {
+            panic!("{}", errors::NOT_BOUNTY_CREATOR);
+        }
+
+        if bounty.status != Symbol::new(&env, STATUS_OPEN) {
+            panic!("{}", errors::BOUNTY_NOT_OPEN);
+        }
+
+        bounty.status = Symbol::new(&env, STATUS_CANCELLED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+
+        events::emit_bounty_cancelled(&env, &bounty_id, &caller);
     }
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
