@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, Symbol, Vec};
 
 use crate::types::{Bounty, Contributor, DataKey};
 
@@ -37,4 +37,34 @@ pub fn get_contributor(env: &Env, address: &Address) -> Option<Contributor> {
     env.storage()
         .persistent()
         .get(&DataKey::Contributor(address.clone()))
+}
+
+pub fn get_status_index(env: &Env, status: &Symbol) -> Vec<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::StatusIndex(status.clone()))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn set_status_index(env: &Env, status: &Symbol, ids: &Vec<BytesN<32>>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::StatusIndex(status.clone()), ids);
+}
+
+pub fn add_to_status_index(env: &Env, status: &Symbol, id: &BytesN<32>) {
+    let mut ids = get_status_index(env, status);
+    ids.push_back(id.clone());
+    set_status_index(env, status, &ids);
+}
+
+pub fn remove_from_status_index(env: &Env, status: &Symbol, id: &BytesN<32>) {
+    let ids = get_status_index(env, status);
+    let mut new_ids = Vec::new(env);
+    for existing in ids.iter() {
+        if existing != id.clone() {
+            new_ids.push_back(existing);
+        }
+    }
+    set_status_index(env, status, &new_ids);
 }

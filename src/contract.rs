@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol,
+    contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol, Vec,
 };
 
 use crate::events;
@@ -8,6 +8,8 @@ use crate::types::{Bounty, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
+const STATUS_COMPLETED: &str = "completed";
+const STATUS_CANCELLED: &str = "cancelled";
 
 fn generate_bounty_id(env: &Env) -> BytesN<32> {
     let count = storage::get_bounty_count(env);
@@ -47,6 +49,7 @@ impl MergeMintContract {
 
         storage::store_bounty(&env, &id, &bounty);
         storage::set_bounty_count(&env, &(count + 1));
+        storage::add_to_status_index(&env, &Symbol::new(&env, STATUS_OPEN), &id);
 
         events::emit_bounty_created(&env, &id, &bounty.creator, &reward_amount);
         id
@@ -61,17 +64,20 @@ impl MergeMintContract {
             panic!("bounty already assigned");
         }
 
+        storage::remove_from_status_index(&env, &Symbol::new(&env, STATUS_OPEN), &bounty_id);
+
         bounty.assignee = Some(contributor.clone());
         bounty.status = Symbol::new(&env, STATUS_IN_PROGRESS);
 
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::add_to_status_index(&env, &Symbol::new(&env, STATUS_IN_PROGRESS), &bounty_id);
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
     }
 
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
         verifier.require_auth();
 
-        let bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
         let assignee = bounty.assignee.clone().expect("bounty has no assignee");
 
         let token = TokenClient::new(&env, &bounty.reward_token);
@@ -90,8 +96,35 @@ impl MergeMintContract {
 
         storage::store_contributor(&env, &assignee, &contributor);
 
+        storage::remove_from_status_index(&env, &Symbol::new(&env, STATUS_IN_PROGRESS), &bounty_id);
+
+        bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::add_to_status_index(&env, &Symbol::new(&env, STATUS_COMPLETED), &bounty_id);
+
         events::emit_bounty_completed(&env, &bounty_id, &assignee);
         events::emit_reward_paid(&env, &bounty_id, &assignee, &bounty.reward_amount);
+    }
+
+    pub fn cancel_bounty(env: Env, creator: Address, bounty_id: BytesN<32>) {
+        creator.require_auth();
+
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+
+        if bounty.creator != creator {
+            panic!("only the creator can cancel");
+        }
+
+        let current_status = bounty.status.clone();
+        storage::remove_from_status_index(&env, &current_status, &bounty_id);
+
+        bounty.status = Symbol::new(&env, STATUS_CANCELLED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::add_to_status_index(&env, &Symbol::new(&env, STATUS_CANCELLED), &bounty_id);
+    }
+
+    pub fn get_bounties_by_status(env: Env, status: Symbol) -> Vec<BytesN<32>> {
+        storage::get_status_index(&env, &status)
     }
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {

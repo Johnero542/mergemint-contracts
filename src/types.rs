@@ -6,6 +6,7 @@ pub enum DataKey {
     BountyCount,
     Bounty(BytesN<32>),
     Contributor(Address),
+    StatusIndex(Symbol),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
