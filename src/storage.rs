@@ -1,6 +1,6 @@
 use soroban_sdk::{Address, BytesN, Env};
 
-use crate::types::{Bounty, Contributor, DataKey};
+use crate::types::{Bounty, BountyMeta, Contributor, DataKey};
 
 pub fn get_bounty_count(env: &Env) -> u64 {
     env.storage()
@@ -25,6 +25,18 @@ pub fn get_bounty(env: &Env, id: &BytesN<32>) -> Option<Bounty> {
     env.storage()
         .persistent()
         .get(&DataKey::Bounty(id.clone()))
+}
+
+pub fn store_bounty_meta(env: &Env, id: &BytesN<32>, meta: &BountyMeta) {
+    env.storage()
+        .temporary()
+        .set(&DataKey::BountyMeta(id.clone()), meta);
+}
+
+pub fn get_bounty_meta(env: &Env, id: &BytesN<32>) -> Option<BountyMeta> {
+    env.storage()
+        .temporary()
+        .get(&DataKey::BountyMeta(id.clone()))
 }
 
 pub fn store_contributor(env: &Env, address: &Address, contributor: &Contributor) {

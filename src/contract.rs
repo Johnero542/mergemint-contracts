@@ -2,9 +2,10 @@ use soroban_sdk::{
     contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol,
 };
 
+use crate::errors;
 use crate::events;
 use crate::storage;
-use crate::types::{Bounty, Contributor};
+use crate::types::{Bounty, BountyMeta, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
@@ -37,15 +38,16 @@ impl MergeMintContract {
 
         let bounty = Bounty {
             creator,
-            title,
-            description,
             reward_amount,
             reward_token,
             assignee: None,
             status: Symbol::new(&env, STATUS_OPEN),
         };
 
+        let meta = BountyMeta { title, description };
+
         storage::store_bounty(&env, &id, &bounty);
+        storage::store_bounty_meta(&env, &id, &meta);
         storage::set_bounty_count(&env, &(count + 1));
 
         events::emit_bounty_created(&env, &id, &bounty.creator, &reward_amount);
@@ -55,11 +57,28 @@ impl MergeMintContract {
     pub fn claim_bounty(env: Env, contributor: Address, bounty_id: BytesN<32>) {
         contributor.require_auth();
 
-        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let mut bounty = storage::get_bounty(&env, &bounty_id)
+            .expect(errors::BOUNTY_NOT_FOUND);
 
         if bounty.assignee.is_some() {
-            panic!("bounty already assigned");
+            panic!("{}", errors::BOUNTY_ALREADY_ASSIGNED);
         }
+
+        let mut contrib = storage::get_contributor(&env, &contributor)
+            .unwrap_or(Contributor {
+                address: contributor.clone(),
+                reputation: 0,
+                total_earned: 0,
+                contribution_count: 0,
+                active_claims: 0,
+            });
+
+        if contrib.active_claims >= 1 {
+            panic!("{}", errors::CONTRIBUTOR_HAS_ACTIVE_CLAIM);
+        }
+
+        contrib.active_claims += 1;
+        storage::store_contributor(&env, &contributor, &contrib);
 
         bounty.assignee = Some(contributor.clone());
         bounty.status = Symbol::new(&env, STATUS_IN_PROGRESS);
@@ -71,22 +90,29 @@ impl MergeMintContract {
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
         verifier.require_auth();
 
-        let bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
-        let assignee = bounty.assignee.clone().expect("bounty has no assignee");
+        let bounty = storage::get_bounty(&env, &bounty_id)
+            .expect(errors::BOUNTY_NOT_FOUND);
+        let assignee = bounty.assignee.clone()
+            .expect(errors::BOUNTY_HAS_NO_ASSIGNEE);
 
         let token = TokenClient::new(&env, &bounty.reward_token);
         token.transfer(&verifier, &assignee, &bounty.reward_amount);
 
-        let mut contributor = storage::get_contributor(&env, &assignee).unwrap_or(Contributor {
-            address: assignee.clone(),
-            reputation: 0,
-            total_earned: 0,
-            contribution_count: 0,
-        });
+        let mut contributor = storage::get_contributor(&env, &assignee)
+            .unwrap_or(Contributor {
+                address: assignee.clone(),
+                reputation: 0,
+                total_earned: 0,
+                contribution_count: 0,
+                active_claims: 0,
+            });
 
         contributor.reputation += 10;
         contributor.total_earned += bounty.reward_amount;
         contributor.contribution_count += 1;
+        if contributor.active_claims > 0 {
+            contributor.active_claims -= 1;
+        }
 
         storage::store_contributor(&env, &assignee, &contributor);
 
@@ -96,6 +122,10 @@ impl MergeMintContract {
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
         storage::get_bounty(&env, &bounty_id)
+    }
+
+    pub fn get_bounty_meta(env: Env, bounty_id: BytesN<32>) -> Option<BountyMeta> {
+        storage::get_bounty_meta(&env, &bounty_id)
     }
 
     pub fn get_contributor(env: Env, address: Address) -> Option<Contributor> {
