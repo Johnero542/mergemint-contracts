@@ -9,6 +9,12 @@ use crate::types::{Bounty, Contributor};
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
 
+// Error message constants — used in explicit pre-condition checks below.
+mod errors {
+    pub const BOUNTY_NOT_FOUND: &str = "bounty not found";
+    pub const BOUNTY_HAS_NO_ASSIGNEE: &str = "bounty has no assignee";
+}
+
 fn generate_bounty_id(env: &Env) -> BytesN<32> {
     let count = storage::get_bounty_count(env);
     let mut buf = [0u8; 32];
@@ -55,7 +61,11 @@ impl MergeMintContract {
     pub fn claim_bounty(env: Env, contributor: Address, bounty_id: BytesN<32>) {
         contributor.require_auth();
 
-        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        // Explicit pre-condition check: bounty must exist.
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+        };
 
         if bounty.assignee.is_some() {
             panic!("bounty already assigned");
@@ -71,8 +81,15 @@ impl MergeMintContract {
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
         verifier.require_auth();
 
-        let bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
-        let assignee = bounty.assignee.clone().expect("bounty has no assignee");
+        // Explicit pre-condition checks: bounty and assignee must exist.
+        let bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+        };
+        let assignee = match bounty.assignee.clone() {
+            Some(a) => a,
+            None => panic!("{}", errors::BOUNTY_HAS_NO_ASSIGNEE),
+        };
 
         let token = TokenClient::new(&env, &bounty.reward_token);
         token.transfer(&verifier, &assignee, &bounty.reward_amount);
