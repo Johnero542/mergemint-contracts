@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 pub fn emit_bounty_created(env: &Env, bounty_id: &BytesN<32>, creator: &Address, reward: &i128) {

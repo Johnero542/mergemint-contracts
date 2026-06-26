@@ -1,4 +1,5 @@
-use soroban_sdk::{Address, BytesN, Env};
+// SPDX-License-Identifier: MIT
+use soroban_sdk::{Address, BytesN, Env, Vec};
 
 use crate::types::{Bounty, Contributor, DataKey};
 
@@ -37,4 +38,17 @@ pub fn get_contributor(env: &Env, address: &Address) -> Option<Contributor> {
     env.storage()
         .persistent()
         .get(&DataKey::Contributor(address.clone()))
+}
+
+pub fn get_open_bounties(env: &Env) -> Vec<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OpenBounties)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn set_open_bounties(env: &Env, list: &Vec<BytesN<32>>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::OpenBounties, list);
 }

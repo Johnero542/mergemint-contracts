@@ -1,5 +1,6 @@
+// SPDX-License-Identifier: MIT
 use soroban_sdk::{
-    contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol,
+    contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol, Vec,
 };
 
 use crate::events;
@@ -48,6 +49,10 @@ impl MergeMintContract {
         storage::store_bounty(&env, &id, &bounty);
         storage::set_bounty_count(&env, &(count + 1));
 
+        let mut open = storage::get_open_bounties(&env);
+        open.push_back(id.clone());
+        storage::set_open_bounties(&env, &open);
+
         events::emit_bounty_created(&env, &id, &bounty.creator, &reward_amount);
         id
     }
@@ -66,6 +71,12 @@ impl MergeMintContract {
 
         storage::store_bounty(&env, &bounty_id, &bounty);
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
+
+        let mut open = storage::get_open_bounties(&env);
+        if let Some(pos) = open.iter().position(|id| id == bounty_id) {
+            open.remove(pos as u32);
+        }
+        storage::set_open_bounties(&env, &open);
     }
 
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
@@ -104,5 +115,9 @@ impl MergeMintContract {
 
     pub fn get_bounty_count(env: Env) -> u64 {
         storage::get_bounty_count(&env)
+    }
+
+    pub fn get_open_bounties(env: Env) -> Vec<BytesN<32>> {
+        storage::get_open_bounties(&env)
     }
 }

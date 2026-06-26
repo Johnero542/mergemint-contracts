@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use soroban_sdk::{contracttype, Address, BytesN, Symbol};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6,6 +7,7 @@ pub enum DataKey {
     BountyCount,
     Bounty(BytesN<32>),
     Contributor(Address),
+    OpenBounties,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
