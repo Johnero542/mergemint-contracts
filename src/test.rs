@@ -187,3 +187,32 @@ fn test_raise_dispute_third_party_fails() {
     client.claim_bounty(&contributor, &bounty_id);
     client.raise_dispute(&third_party, &bounty_id);
 }
+
+#[test]
+fn test_bounty_id_edge_cases() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let edge_cases = vec![0u64, 1, 255, 256, 65535, 65536, u32::MAX as u64, u32::MAX as u64 + 1, u64::MAX - 1];
+    let mut ids = vec![];
+
+    for _ in 0..edge_cases.len() {
+        let id = client.create_bounty(
+            &creator,
+            &Symbol::new(&env, "test"),
+            &Symbol::new(&env, "test"),
+            &1000,
+            &Address::generate(&env),
+            &0,
+        );
+        ids.push(id);
+    }
+
+    assert_eq!(ids.len(), edge_cases.len());
+    for i in 0..ids.len() {
+        for j in i + 1..ids.len() {
+            assert_ne!(ids[i], ids[j], "IDs at positions {} and {} must differ", i, j);
+        }
+    }
+}
