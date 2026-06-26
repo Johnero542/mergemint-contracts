@@ -18,6 +18,8 @@ pub struct Bounty {
     pub reward_token: Address,
     pub assignee: Option<Address>,
     pub status: Symbol,
+    /// Optional ledger sequence number after which the bounty can be expired.
+    pub deadline: Option<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

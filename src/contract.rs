@@ -40,6 +40,7 @@ impl MergeMintContract {
         description: Symbol,
         reward_amount: i128,
         reward_token: Address,
+        deadline: Option<u32>,
     ) -> BytesN<32> {
         creator.require_auth();
 
@@ -54,6 +55,7 @@ impl MergeMintContract {
             reward_token,
             assignee: None,
             status: Symbol::new(&env, STATUS_OPEN),
+            deadline,
         };
 
         storage::store_bounty(&env, &id, &bounty);
@@ -139,6 +141,43 @@ impl MergeMintContract {
         storage::store_bounty(&env, &bounty_id, &bounty);
 
         events::emit_bounty_cancelled(&env, &bounty_id, &caller);
+    }
+
+    /// Expire an open bounty whose deadline has passed.
+    /// Design choice: permissionless — any caller can trigger expiry to keep the
+    /// open list clean without requiring the creator to be online. The caller
+    /// still needs to authenticate (require_auth) so the transaction is signed.
+    /// Once escrow is implemented this will trigger a refund to the creator.
+    pub fn expire_bounty(env: Env, caller: Address, bounty_id: BytesN<32>) {
+        caller.require_auth();
+
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+        };
+
+        // Guard: must have a deadline set.
+        let deadline = match bounty.deadline {
+            Some(d) => d,
+            None => panic!("{}", errors::BOUNTY_NO_DEADLINE),
+        };
+
+        // Guard: deadline must have passed.
+        if env.ledger().sequence() <= deadline {
+            panic!("{}", errors::DEADLINE_NOT_PASSED);
+        }
+
+        // Guard: only open bounties can be expired.
+        if bounty.status != Symbol::new(&env, STATUS_OPEN) {
+            panic!("{}", errors::BOUNTY_NOT_OPEN);
+        }
+
+        bounty.status = Symbol::new(&env, STATUS_CANCELLED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+
+        // Escrow refund goes here once escrow is implemented.
+
+        events::emit_bounty_expired(&env, &bounty_id, &bounty.creator);
     }
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
