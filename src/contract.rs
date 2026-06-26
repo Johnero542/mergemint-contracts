@@ -8,6 +8,7 @@ use crate::types::{Bounty, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
+const STATUS_DISPUTED: &str = "disputed";
 
 fn generate_bounty_id(env: &Env) -> BytesN<32> {
     let count = storage::get_bounty_count(env);
@@ -29,6 +30,7 @@ impl MergeMintContract {
         description: Symbol,
         reward_amount: i128,
         reward_token: Address,
+        min_reputation: u32,
     ) -> BytesN<32> {
         creator.require_auth();
 
@@ -43,6 +45,7 @@ impl MergeMintContract {
             reward_token,
             assignee: None,
             status: Symbol::new(&env, STATUS_OPEN),
+            min_reputation,
         };
 
         storage::store_bounty(&env, &id, &bounty);
@@ -59,6 +62,18 @@ impl MergeMintContract {
 
         if bounty.assignee.is_some() {
             panic!("bounty already assigned");
+        }
+
+        if bounty.min_reputation > 0 {
+            let contributor_profile = storage::get_contributor(&env, &contributor).unwrap_or(Contributor {
+                address: contributor.clone(),
+                reputation: 0,
+                total_earned: 0,
+                contribution_count: 0,
+            });
+            if contributor_profile.reputation < bounty.min_reputation {
+                panic!("contributor reputation is too low");
+            }
         }
 
         bounty.assignee = Some(contributor.clone());
@@ -92,6 +107,21 @@ impl MergeMintContract {
 
         events::emit_bounty_completed(&env, &bounty_id, &assignee);
         events::emit_reward_paid(&env, &bounty_id, &assignee, &bounty.reward_amount);
+    }
+
+    pub fn raise_dispute(env: Env, caller: Address, bounty_id: BytesN<32>) {
+        caller.require_auth();
+
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let assignee = bounty.assignee.clone();
+
+        if caller != bounty.creator && Some(caller.clone()) != assignee {
+            panic!("only creator or assignee can raise dispute");
+        }
+
+        bounty.status = Symbol::new(&env, STATUS_DISPUTED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+        events::emit_bounty_disputed(&env, &bounty_id, &caller);
     }
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {

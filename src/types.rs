@@ -18,6 +18,7 @@ pub struct Bounty {
     pub reward_token: Address,
     pub assignee: Option<Address>,
     pub status: Symbol,
+    pub min_reputation: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
