@@ -9,8 +9,7 @@ use crate::types::{Bounty, Contributor};
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
 
-fn generate_bounty_id(env: &Env) -> BytesN<32> {
-    let count = storage::get_bounty_count(env);
+fn generate_bounty_id(env: &Env, count: u64) -> BytesN<32> {
     let mut buf = [0u8; 32];
     let count_bytes = count.to_be_bytes();
     buf[24..32].copy_from_slice(&count_bytes);
@@ -33,7 +32,7 @@ impl MergeMintContract {
         creator.require_auth();
 
         let count = storage::get_bounty_count(&env);
-        let id = generate_bounty_id(&env);
+        let id = generate_bounty_id(&env, count);
 
         let bounty = Bounty {
             creator,

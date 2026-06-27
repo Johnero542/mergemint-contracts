@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
+    testutils::Address as _,
+    token::StellarAssetClient,
     Address, Env, Symbol,
 };
 
@@ -96,20 +97,61 @@ fn test_bounty_count() {
 
 #[test]
 fn test_complete_bounty_updates_status() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor, verifier) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let reward_token = env.register_stellar_asset_contract(token_admin.clone());
+    let sac = StellarAssetClient::new(&env, &reward_token);
+    sac.mint(&verifier, &1000);
 
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_c"),
         &Symbol::new(&env, "desc_c"),
         &1000,
-        &Address::generate(&env),
+        &reward_token,
     );
 
     client.claim_bounty(&contributor, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
     let bounty = client.get_bounty(&bounty_id).unwrap();
     assert_eq!(bounty.assignee.unwrap(), contributor);
+
+    let contributor_profile = client.get_contributor(&contributor).unwrap();
+    assert_eq!(contributor_profile.reputation, 10);
+    assert_eq!(contributor_profile.contribution_count, 1);
+    assert_eq!(contributor_profile.total_earned, 1000);
+}
+
+#[test]
+fn test_contributor_reputation() {
+    let (env, creator, contributor, verifier) = setup_test();
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let reward_token = env.register_stellar_asset_contract(token_admin.clone());
+    let sac = StellarAssetClient::new(&env, &reward_token);
+    sac.mint(&verifier, &500);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_2"),
+        &Symbol::new(&env, "desc"),
+        &500,
+        &reward_token,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let contributor_profile = client.get_contributor(&contributor).unwrap();
+    assert_eq!(contributor_profile.reputation, 10);
+    assert_eq!(contributor_profile.contribution_count, 1);
+    assert_eq!(contributor_profile.total_earned, 500);
 }
