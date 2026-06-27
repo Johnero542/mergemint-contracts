@@ -6,6 +6,7 @@ use soroban_sdk::{contracttype, Address, BytesN, Symbol};
 pub enum DataKey {
     BountyCount,
     Bounty(BytesN<32>),
+    BountyMeta(BytesN<32>),
     Contributor(Address),
     StatusIndex(Symbol),
 }
@@ -14,8 +15,6 @@ pub enum DataKey {
 #[contracttype]
 pub struct Bounty {
     pub creator: Address,
-    pub title: Symbol,
-    pub description: Symbol,
     pub reward_amount: i128,
     pub reward_token: Address,
     pub assignee: Option<Address>,
@@ -28,6 +27,13 @@ pub struct Bounty {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
+pub struct BountyMeta {
+    pub title: Symbol,
+    pub description: Symbol,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct Contributor {
     // Stored so off-chain consumers can identify the contributor from the struct alone,
     // without needing to key back through storage.
@@ -36,4 +42,5 @@ pub struct Contributor {
     pub reputation: u32,
     pub total_earned: i128,
     pub contribution_count: u32,
+    pub active_claims: u32,
 }

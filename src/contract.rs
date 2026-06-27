@@ -1,8 +1,9 @@
 use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol};
 
+use crate::errors;
 use crate::events;
 use crate::storage;
-use crate::types::{Bounty, Contributor};
+use crate::types::{Bounty, BountyMeta, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
@@ -37,8 +38,6 @@ impl MergeMintContract {
 
         let bounty = Bounty {
             creator,
-            title,
-            description,
             reward_amount,
             reward_token,
             assignee: None,
@@ -46,7 +45,10 @@ impl MergeMintContract {
             min_reputation,
         };
 
+        let meta = BountyMeta { title, description };
+
         storage::store_bounty(&env, &id, &bounty);
+        storage::store_bounty_meta(&env, &id, &meta);
         storage::set_bounty_count(&env, &(count + 1));
         storage::add_bounty_to_status(&env, &id, &bounty.status);
 
@@ -68,7 +70,20 @@ impl MergeMintContract {
         };
 
         if bounty.assignee.is_some() {
-            panic!("bounty already assigned");
+            panic!("{}", errors::BOUNTY_ALREADY_ASSIGNED);
+        }
+
+        let mut contrib = storage::get_contributor(&env, &contributor)
+            .unwrap_or(Contributor {
+                address: contributor.clone(),
+                reputation: 0,
+                total_earned: 0,
+                contribution_count: 0,
+                active_claims: 0,
+            });
+
+        if contrib.active_claims >= 1 {
+            panic!("{}", errors::CONTRIBUTOR_HAS_ACTIVE_CLAIM);
         }
 
         if bounty.min_reputation > 0 {
@@ -120,6 +135,9 @@ impl MergeMintContract {
         contributor.reputation += 10;
         contributor.total_earned += bounty.reward_amount;
         contributor.contribution_count += 1;
+        if contributor.active_claims > 0 {
+            contributor.active_claims -= 1;
+        }
 
         // --- writes ---
         storage::store_contributor(&env, &assignee, &contributor);
@@ -164,6 +182,10 @@ impl MergeMintContract {
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
         storage::get_bounty(&env, &bounty_id)
+    }
+
+    pub fn get_bounty_meta(env: Env, bounty_id: BytesN<32>) -> Option<BountyMeta> {
+        storage::get_bounty_meta(&env, &bounty_id)
     }
 
     pub fn get_contributor(env: Env, address: Address) -> Option<Contributor> {
