@@ -48,6 +48,10 @@ pub struct Bounty {
     /// A value of `0` means any contributor can claim regardless of reputation.
     /// Reputation is a monotonically increasing `u32` (+10 per completed bounty).
     pub min_reputation: u32,
+    /// Optional ledger sequence number after which the bounty cannot be claimed.
+    /// If set, claim_bounty will reject claims from contributors once the ledger
+    /// sequence number exceeds this value.
+    pub deadline: Option<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

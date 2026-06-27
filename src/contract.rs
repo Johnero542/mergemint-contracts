@@ -8,6 +8,7 @@ use crate::types::{Bounty, BountyMeta, Contributor};
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
 const STATUS_COMPLETED: &str = "completed";
+const STATUS_CANCELLED: &str = "cancelled";
 const STATUS_DISPUTED: &str = "disputed";
 
 fn generate_bounty_id(env: &Env, count: u64) -> BytesN<32> {
@@ -30,6 +31,7 @@ impl MergeMintContract {
         reward_amount: i128,
         reward_token: Address,
         min_reputation: u32,
+        deadline: Option<u32>,
     ) -> BytesN<32> {
         creator.require_auth();
 
@@ -44,6 +46,7 @@ impl MergeMintContract {
             max_assignees: 1,
             status: Symbol::new(&env, STATUS_OPEN),
             min_reputation,
+            deadline,
         };
 
         let meta = BountyMeta { title, description };
@@ -99,16 +102,27 @@ impl MergeMintContract {
             panic!("{}", errors::CONTRIBUTOR_HAS_ACTIVE_CLAIM);
         }
 
-        if bounty.min_reputation > 0 && contrib.reputation < bounty.min_reputation {
-            panic!("contributor reputation is too low");
+        // Deadline enforcement: if a deadline is set and has passed, reject the claim
+        if let Some(deadline) = bounty.deadline {
+            if env.ledger().sequence() > deadline {
+                panic!("{}", errors::BOUNTY_DEADLINE_PASSED);
+            }
         }
 
-        // Compute this contributor's share: full 10 000 bp for a single-slot bounty,
-        // otherwise distribute evenly across `max_assignees`.
-        let total_bp: u32 = 10_000;
-        let share = total_bp / bounty.max_assignees;
+        if bounty.min_reputation > 0 {
+            let contributor_profile = storage::get_contributor(&env, &contributor).unwrap_or(Contributor {
+                address: contributor.clone(),
+                reputation: 0,
+                total_earned: 0,
+                contribution_count: 0,
+            });
+            if contributor_profile.reputation < bounty.min_reputation {
+                panic!("contributor reputation is too low");
+            }
+        }
 
-        bounty.assignees.push_back((contributor.clone(), share));
+        let previous_status = bounty.status.clone();
+        bounty.assignee = Some(contributor.clone());
         bounty.status = Symbol::new(&env, STATUS_IN_PROGRESS);
 
         let previous_status = Symbol::new(&env, STATUS_OPEN);
@@ -217,6 +231,65 @@ impl MergeMintContract {
 
         contrib.metadata = Some(metadata);
         storage::store_contributor(&env, &contributor, &contrib);
+    }
+
+    /// Cancel a bounty. Only the creator can cancel.
+    /// Security-critical: prevents non-creators from cancelling and potentially
+    /// triggering escrow refunds they shouldn't receive.
+    pub fn cancel_bounty(env: Env, caller: Address, bounty_id: BytesN<32>) {
+        caller.require_auth();
+
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+
+        // Security check: only creator can cancel
+        if caller != bounty.creator {
+            panic!("{}", errors::NOT_BOUNTY_CREATOR);
+        }
+
+        // Guard: bounty must be open to be cancelled
+        if bounty.status != Symbol::new(&env, STATUS_OPEN) {
+            panic!("{}", errors::BOUNTY_NOT_OPEN);
+        }
+
+        bounty.status = Symbol::new(&env, STATUS_CANCELLED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+
+        // Note: Escrow refund will go here once escrow is implemented.
+        events::emit_bounty_cancelled(&env, &bounty_id, &caller);
+    }
+
+    /// Expire an open bounty whose deadline has passed.
+    /// Design choice: permissionless — any caller can trigger expiry to keep the
+    /// open list clean without requiring the creator to be online. The caller
+    /// still needs to authenticate (require_auth) so the transaction is signed.
+    /// Once escrow is implemented this will trigger a refund to the creator.
+    pub fn expire_bounty(env: Env, caller: Address, bounty_id: BytesN<32>) {
+        caller.require_auth();
+
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+
+        // Guard: must have a deadline set.
+        let deadline = match bounty.deadline {
+            Some(d) => d,
+            None => panic!("{}", errors::BOUNTY_NO_DEADLINE),
+        };
+
+        // Guard: deadline must have passed.
+        if env.ledger().sequence() <= deadline {
+            panic!("{}", errors::DEADLINE_NOT_PASSED);
+        }
+
+        // Guard: only open bounties can be expired.
+        if bounty.status != Symbol::new(&env, STATUS_OPEN) {
+            panic!("{}", errors::BOUNTY_NOT_OPEN);
+        }
+
+        bounty.status = Symbol::new(&env, STATUS_CANCELLED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+
+        // Escrow refund goes here once escrow is implemented.
+
+        events::emit_bounty_expired(&env, &bounty_id, &bounty.creator);
     }
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
