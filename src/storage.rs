@@ -145,3 +145,16 @@ pub fn move_bounty_status(
         add_bounty_to_status(env, bounty_id, new_status);
     }
 }
+
+pub fn get_open_bounties(env: &Env) -> Vec<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OpenBounties)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn set_open_bounties(env: &Env, bounties: &Vec<BytesN<32>>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::OpenBounties, bounties);
+}
