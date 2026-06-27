@@ -48,6 +48,7 @@ impl MergeMintContract {
 
         storage::store_bounty(&env, &id, &bounty);
         storage::set_bounty_count(&env, &(count + 1));
+        storage::add_bounty_to_status(&env, &id, &bounty.status);
 
         events::emit_bounty_created(&env, &id, &bounty.creator, &reward_amount);
         id
@@ -78,6 +79,7 @@ impl MergeMintContract {
         bounty.status = Symbol::new(&env, STATUS_IN_PROGRESS);
 
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
     }
 
@@ -156,5 +158,9 @@ impl MergeMintContract {
 
     pub fn get_bounty_count(env: Env) -> u64 {
         storage::get_bounty_count(&env)
+    }
+
+    pub fn get_bounties_by_status(env: Env, status: Symbol) -> soroban_sdk::Vec<BytesN<32>> {
+        storage::get_bounties_by_status(&env, &status)
     }
 }

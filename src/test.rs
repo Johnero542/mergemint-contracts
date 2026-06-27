@@ -351,3 +351,59 @@ fn test_bounty_id_edge_cases() {
         }
     }
 }
+
+#[test]
+fn test_status_index_tracks_bounty_lifecycle() {
+    let (env, creator, contributor, verifier) = setup_test();
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let reward_token = env.register_stellar_asset_contract(token_admin.clone());
+    let token_client = StellarAssetClient::new(&env, &reward_token);
+    token_client.mint(&token_admin, &1000);
+    token_client.transfer(&token_admin, &verifier, &1000);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "status_bounty"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &reward_token,
+    );
+
+    let open_status = Symbol::new(&env, "open");
+    let in_progress_status = Symbol::new(&env, "in_progress");
+    let completed_status = Symbol::new(&env, "completed");
+    let cancelled_status = Symbol::new(&env, "cancelled");
+
+    assert_eq!(client.get_bounties_by_status(&open_status).len(), 1);
+    assert_eq!(client.get_bounties_by_status(&in_progress_status).len(), 0);
+    assert_eq!(client.get_bounties_by_status(&completed_status).len(), 0);
+    assert_eq!(client.get_bounties_by_status(&cancelled_status).len(), 0);
+
+    client.claim_bounty(&contributor, &bounty_id);
+    assert_eq!(client.get_bounties_by_status(&open_status).len(), 0);
+    assert_eq!(client.get_bounties_by_status(&in_progress_status).len(), 1);
+    assert_eq!(client.get_bounties_by_status(&completed_status).len(), 0);
+    assert_eq!(client.get_bounties_by_status(&cancelled_status).len(), 0);
+
+    client.complete_bounty(&verifier, &bounty_id);
+    assert_eq!(client.get_bounties_by_status(&open_status).len(), 0);
+    assert_eq!(client.get_bounties_by_status(&in_progress_status).len(), 0);
+    assert_eq!(client.get_bounties_by_status(&completed_status).len(), 1);
+    assert_eq!(client.get_bounties_by_status(&cancelled_status).len(), 0);
+
+    let cancelled_bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "cancelled_bounty"),
+        &Symbol::new(&env, "desc"),
+        &500,
+        &reward_token,
+    );
+
+    client.cancel_bounty(&creator, &cancelled_bounty_id);
+    assert_eq!(client.get_bounties_by_status(&open_status).len(), 0);
+    assert_eq!(client.get_bounties_by_status(&cancelled_status).len(), 1);
+}
