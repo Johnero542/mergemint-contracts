@@ -8,22 +8,10 @@
 cargo build --release --target wasm32-unknown-unknown
 ```
 
-Or with Make:
-
-```bash
-make build
-```
-
 ### Testing
 
 ```bash
 cargo test
-```
-
-Or:
-
-```bash
-make test
 ```
 
 All tests must pass before submitting a PR.
@@ -61,16 +49,6 @@ cargo test
 ```
 
 If tests pass, snapshots are current.
-
-## TypeScript Bindings
-
-Generate TypeScript bindings for the SDK:
-
-```bash
-make bindings
-```
-
-This produces `sdk/generated/` with typed contract interfaces. Bindings should be regenerated whenever the contract interface changes (function signatures, parameter types).
 
 ## Code Style
 

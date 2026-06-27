@@ -17,6 +17,9 @@ pub struct Bounty {
     pub reward_amount: i128,
     pub reward_token: Address,
     pub assignee: Option<Address>,
+    // Exposed in the contract type for off-chain indexers to track lifecycle state;
+    // not read internally since contract logic uses assignee presence as the source of truth.
+    #[allow(dead_code)]
     pub status: Symbol,
     pub min_reputation: u32,
 }
@@ -24,6 +27,9 @@ pub struct Bounty {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct Contributor {
+    // Stored so off-chain consumers can identify the contributor from the struct alone,
+    // without needing to key back through storage.
+    #[allow(dead_code)]
     pub address: Address,
     pub reputation: u32,
     pub total_earned: i128,
