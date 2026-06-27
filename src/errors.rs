@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pub const BOUNTY_NOT_FOUND: &str = "bounty not found";
 pub const BOUNTY_ALREADY_ASSIGNED: &str = "bounty already assigned";
 pub const BOUNTY_NOT_OPEN: &str = "bounty not open";
@@ -9,6 +8,3 @@ pub const NOT_BOUNTY_CREATOR: &str = "not bounty creator";
 pub const VERIFIER_CANNOT_BE_ASSIGNEE: &str = "verifier cannot be assignee";
 pub const CREATOR_CANNOT_CLAIM: &str = "creator cannot claim";
 pub const CONTRIBUTOR_HAS_ACTIVE_CLAIM: &str = "contributor already has an active claim";
-pub const BOUNTY_DEADLINE_PASSED: &str = "bounty deadline has passed";
-pub const BOUNTY_NO_DEADLINE: &str = "bounty has no deadline";
-pub const DEADLINE_NOT_PASSED: &str = "bounty deadline has not passed";
