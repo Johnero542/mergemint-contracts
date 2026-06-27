@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol,
-};
+use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol};
 
 use crate::events;
 use crate::storage;
@@ -8,7 +6,7 @@ use crate::types::{Bounty, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
-const STATUS_DISPUTED: &str = "disputed";
+const STATUS_COMPLETED: &str = "completed";
 
 fn generate_bounty_id(env: &Env) -> BytesN<32> {
     let count = storage::get_bounty_count(env);
@@ -86,12 +84,8 @@ impl MergeMintContract {
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
         verifier.require_auth();
 
-        let bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
         let assignee = bounty.assignee.clone().expect("bounty has no assignee");
-
-        let token = TokenClient::new(&env, &bounty.reward_token);
-        token.transfer(&verifier, &assignee, &bounty.reward_amount);
-
         let mut contributor = storage::get_contributor(&env, &assignee).unwrap_or(Contributor {
             address: assignee.clone(),
             reputation: 0,
@@ -99,11 +93,23 @@ impl MergeMintContract {
             contribution_count: 0,
         });
 
+        // --- external call ---
+        TokenClient::new(&env, &bounty.reward_token).transfer(
+            &verifier,
+            &assignee,
+            &bounty.reward_amount,
+        );
+
+        // --- in-memory mutations ---
         contributor.reputation += 10;
         contributor.total_earned += bounty.reward_amount;
         contributor.contribution_count += 1;
 
+        // --- writes ---
         storage::store_contributor(&env, &assignee, &contributor);
+
+        bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
 
         events::emit_bounty_completed(&env, &bounty_id, &assignee);
         events::emit_reward_paid(&env, &bounty_id, &assignee, &bounty.reward_amount);
