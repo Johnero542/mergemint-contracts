@@ -57,7 +57,11 @@ impl MergeMintContract {
     pub fn claim_bounty(env: Env, contributor: Address, bounty_id: BytesN<32>) {
         contributor.require_auth();
 
-        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        // Explicit pre-condition check: bounty must exist.
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+        };
 
         if bounty.assignee.is_some() {
             panic!("bounty already assigned");
