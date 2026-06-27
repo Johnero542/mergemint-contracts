@@ -39,3 +39,11 @@ pub fn emit_bounty_disputed(env: &Env, bounty_id: &BytesN<32>, caller: &Address)
         bounty_id.clone(),
     );
 }
+
+pub fn emit_bounty_updated(env: &Env, bounty_id: &BytesN<32>, creator: &Address) {
+    let topic = Symbol::new(env, "bounty_updated");
+    env.events().publish(
+        (topic, creator.clone()),
+        bounty_id.clone(),
+    );
+}

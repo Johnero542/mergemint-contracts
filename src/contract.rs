@@ -130,6 +130,22 @@ impl MergeMintContract {
         events::emit_bounty_disputed(&env, &bounty_id, &caller);
     }
 
+    pub fn update_bounty(env: Env, creator: Address, bounty_id: BytesN<32>, title: Symbol, description: Symbol) {
+        creator.require_auth();
+
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+
+        if bounty.creator != creator {
+            panic!("only creator can update bounty");
+        }
+
+        bounty.title = title;
+        bounty.description = description;
+
+        storage::store_bounty(&env, &bounty_id, &bounty);
+        events::emit_bounty_updated(&env, &bounty_id, &creator);
+    }
+
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
         storage::get_bounty(&env, &bounty_id)
     }
