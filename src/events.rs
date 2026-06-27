@@ -31,3 +31,11 @@ pub fn emit_reward_paid(env: &Env, bounty_id: &BytesN<32>, contributor: &Address
         (bounty_id.clone(), *amount),
     );
 }
+
+pub fn emit_bounty_disputed(env: &Env, bounty_id: &BytesN<32>, caller: &Address) {
+    let topic = Symbol::new(env, "bounty_disputed");
+    env.events().publish(
+        (topic, caller.clone()),
+        bounty_id.clone(),
+    );
+}

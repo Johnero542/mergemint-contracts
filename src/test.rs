@@ -228,3 +228,72 @@ fn test_contributor_initial_state_after_first_completion() {
     assert_eq!(data.contribution_count, 1);
     assert_eq!(data.address, contributor);
 }
+
+#[test]
+fn test_raise_dispute_creator() {
+    let (env, creator, contributor, _verifier) = setup_test();
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_dispute"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "disputed"));
+}
+
+#[test]
+fn test_raise_dispute_assignee() {
+    let (env, creator, contributor, _verifier) = setup_test();
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_dispute2"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&contributor, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "disputed"));
+}
+
+#[test]
+#[should_panic(expected = "only creator or assignee can raise dispute")]
+fn test_raise_dispute_third_party_fails() {
+    let (env, creator, contributor, _verifier) = setup_test();
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let third_party = Address::generate(&env);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_dispute3"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&third_party, &bounty_id);
+}

@@ -21,6 +21,7 @@ pub struct Bounty {
     // not read internally since contract logic uses assignee presence as the source of truth.
     #[allow(dead_code)]
     pub status: Symbol,
+    pub min_reputation: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
