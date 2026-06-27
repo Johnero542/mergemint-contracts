@@ -75,6 +75,31 @@ fn test_bounty_count() {
 }
 
 #[test]
+fn test_bounty_count_increment_loop() {
+    let (env, creator, _contributor) = setup_test();
+
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_bounty_count(), 0);
+
+    let reward_token = Address::generate(&env);
+    for i in 0..5 {
+        client.create_bounty(
+            &creator,
+            &Symbol::new(&env, "bounty"),
+            &Symbol::new(&env, "desc"),
+            &1000,
+            &reward_token,
+            &0,
+        );
+        assert_eq!(client.get_bounty_count(), i + 1);
+    }
+
+    assert_eq!(client.get_bounty_count(), 5);
+}
+
+#[test]
 fn test_complete_bounty_updates_status() {
     let (env, creator, contributor, _verifier) = setup_test();
     let contract_id = env.register_contract(None, MergeMintContract);
@@ -231,7 +256,7 @@ fn test_contributor_initial_state_after_first_completion() {
 
 #[test]
 fn test_raise_dispute_creator() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
@@ -254,7 +279,7 @@ fn test_raise_dispute_creator() {
 
 #[test]
 fn test_raise_dispute_assignee() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
@@ -278,7 +303,7 @@ fn test_raise_dispute_assignee() {
 #[test]
 #[should_panic(expected = "only creator or assignee can raise dispute")]
 fn test_raise_dispute_third_party_fails() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor) = setup_test();
 
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
