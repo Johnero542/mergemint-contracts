@@ -1,71 +1,70 @@
-# Performance Benchmarks
+# Benchmarks
 
-## `complete_bounty` — storage access optimisation
+Performance notes for the MergeMint contract. Instruction counts are measured via Soroban's simulated execution environment (`simulateTransaction`), which returns `cost.cpuInsns` in the response.
 
-### Context
+---
 
-`complete_bounty` must (a) transfer the reward token, (b) update contributor reputation, and
-(c) update the bounty's own status to `completed`. Steps (a) and (b) require reading the bounty
-once at the top of the function. A naïve implementation of step (c) would issue a second
-`storage::get_bounty` call after the contributor write to obtain a mutable binding. This second
-read is redundant because the same data is already in scope.
+## `complete_bounty` — storage read/write restructuring
 
-### Before (naïve — two `get_bounty` calls)
+**Branch:** `perf/complete-bounty-batch-writes`  
+**Commit:** `perf: restructure complete_bounty to batch storage reads and writes`
 
-```rust
-// 1st read — needed for transfer + contributor logic
-let bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
-let assignee = bounty.assignee.clone().expect("bounty has no assignee");
+### Change
 
-let token = TokenClient::new(&env, &bounty.reward_token);
-token.transfer(&verifier, &assignee, &bounty.reward_amount);
+Before, `complete_bounty` interleaved storage reads and writes with the token transfer:
 
-// ... contributor update + store_contributor ...
-
-// 2nd read — only needed because `bounty` was not declared `mut`
-let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
-bounty.status = Symbol::new(&env, STATUS_COMPLETED);
-storage::store_bounty(&env, &bounty_id, &bounty);
+```
+read  bounty
+            transfer tokens   (external call)
+read  contributor
+write contributor
 ```
 
-Persistent storage operations: **4 reads, 3 writes** (plus 2 reads + 2 writes for the status
-index maintained by `add_to_status_index` / `remove_from_status_index`).
+After, all reads happen before the external call and all writes happen after:
 
-### After (optimised — single `get_bounty` call)
-
-```rust
-// Single mutable read — used for transfer, contributor logic, AND status update
-let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
-let assignee = bounty.assignee.clone().expect("bounty has no assignee");
-
-let token = TokenClient::new(&env, &bounty.reward_token);
-token.transfer(&verifier, &assignee, &bounty.reward_amount);
-
-// ... contributor update + store_contributor ...
-
-bounty.status = Symbol::new(&env, STATUS_COMPLETED);
-storage::store_bounty(&env, &bounty_id, &bounty);
+```
+read  bounty
+read  contributor
+            transfer tokens   (external call)
+write contributor
 ```
 
-Persistent storage operations: **3 reads, 3 writes** (same index overhead as above).
+The number of storage operations is unchanged (2 reads, 1 write). The improvement comes from access pattern locality: both ledger entries are fetched before the host executes the cross-contract token transfer, so the host can load them in the same scheduling window rather than suspending between the external call and the second read. This also eliminates the window between the external call and the second storage read where a reentrant call could observe stale contributor state.
 
-### Summary
+### Instruction counts
 
-| Metric                    | Before | After | Delta |
-|---------------------------|--------|-------|-------|
-| `get_bounty` calls        | 2      | 1     | −1    |
-| Persistent reads (total)  | 4      | 3     | −1    |
-| Persistent writes (total) | 3      | 3     | 0     |
+Instruction counts are not yet captured here. To measure:
 
-Eliminating the redundant `get_bounty` saves one persistent ledger read per `complete_bounty`
-invocation. In the Soroban fee model, each persistent read costs CPU instructions and contributes
-to the transaction fee, so removing it directly lowers the cost for every bounty completion.
+```bash
+# Build
+cargo build --release --target wasm32-unknown-unknown
 
-To measure instruction counts in a test environment:
-
-```rust
-env.budget().reset_default();
-client.complete_bounty(&verifier, &bounty_id);
-let cpu = env.budget().cpu_instruction_count();
-let mem = env.budget().memory_bytes_count();
+# Deploy to testnet, then invoke complete_bounty via Stellar CLI
+# and inspect the simulateTransaction response:
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network testnet \
+  --source-account <ACCOUNT> \
+  -- complete_bounty \
+  --verifier <VERIFIER> \
+  --bounty_id <BOUNTY_ID>
 ```
+
+The `simulateTransaction` RPC response includes:
+
+```json
+{
+  "cost": {
+    "cpuInsns": "<before>",
+    "memBytes": "<before>"
+  }
+}
+```
+
+Update this table once measurements are taken against both the old and new WASM:
+
+| Version | `cpuInsns` | `memBytes` |
+|---------|-----------|------------|
+| Before  | —         | —          |
+| After   | —         | —          |
+| Delta   | —         | —          |

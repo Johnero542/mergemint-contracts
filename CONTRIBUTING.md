@@ -1,43 +1,63 @@
 # Contributing to MergeMint Contracts
 
-## Prerequisites
+## Development Workflow
 
-- [Rust](https://rustup.rs/) with the `wasm32-unknown-unknown` target
-- [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli)
-
-## Developer Setup
-
-### 1. Clone and build
+### Building
 
 ```bash
-git clone <repo-url>
-cd mergemint-contracts
-cargo build
+cargo build --release --target wasm32-unknown-unknown
 ```
 
-### 2. Install pre-commit hooks (recommended)
-
-The hooks run `cargo fmt --check` and `cargo clippy -- -D warnings` before every commit, giving you instant local feedback on the same checks CI enforces.
-
-```bash
-bash scripts/install-hooks.sh
-```
-
-Once installed, the hooks run automatically. If a check fails the commit is aborted with a clear error message — fix the issue, re-stage, and commit again.
-
-### 3. Run tests
+### Testing
 
 ```bash
 cargo test
 ```
 
-## Workflow
+All tests must pass before submitting a PR.
 
-1. Fork the repo and create a feature branch off `main`.
-2. Make your changes and ensure `cargo test`, `cargo fmt --check`, and `cargo clippy -- -D warnings` all pass.
-3. Open a PR with a description that includes `Closes #<issue_id>`.
+## Test Snapshots
+
+### What Are Snapshots?
+
+Test snapshots in `test_snapshots/` capture the Soroban ledger state after contract operations. They verify that storage, type encodings, and struct layouts remain consistent across code changes.
+
+### When Snapshots Become Stale
+
+Snapshots must be regenerated if:
+- A field is added to `Bounty`, `Contributor`, or other `#[contracttype]` structs
+- A field is removed or reordered
+- A field type changes (e.g., `u32` → `u64`)
+- Field visibility or attributes change
+
+### Regenerating Snapshots
+
+If a test fails with a snapshot mismatch, regenerate with:
+
+```bash
+cargo test -- --nocapture
+```
+
+Then review the diff and commit the updated snapshots.
+
+### Verifying Snapshots
+
+To ensure all snapshots are valid:
+
+```bash
+cargo test
+```
+
+If tests pass, snapshots are current.
 
 ## Code Style
 
-- Follow standard Rust formatting enforced by `rustfmt`.
-- Zero Clippy warnings — the CI pipeline runs `cargo clippy -- -D warnings`.
+- Use `rustfmt` for formatting
+- Follow Soroban SDK conventions
+- Document non-obvious logic with inline comments
+
+## Security
+
+- All state-mutating functions require authentication
+- Validate all external inputs
+- Use `overflow-checks = true` for arithmetic safety
