@@ -1,9 +1,6 @@
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::{Address as _, BytesN as _},
-    Address, Env, Symbol,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, Symbol};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
