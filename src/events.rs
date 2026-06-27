@@ -39,3 +39,19 @@ pub fn emit_bounty_updated(env: &Env, bounty_id: &BytesN<32>, creator: &Address)
         bounty_id.clone(),
     );
 }
+
+pub fn emit_bounty_cancelled(env: &Env, bounty_id: &BytesN<32>, creator: &Address) {
+    let topic = Symbol::new(env, "bounty_cancelled");
+    env.events().publish(
+        (topic, creator.clone()),
+        bounty_id.clone(),
+    );
+}
+
+pub fn emit_bounty_expired(env: &Env, bounty_id: &BytesN<32>, creator: &Address) {
+    let topic = Symbol::new(env, "bounty_expired");
+    env.events().publish(
+        (topic, creator.clone()),
+        bounty_id.clone(),
+    );
+}
