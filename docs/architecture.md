@@ -18,12 +18,23 @@ MergeMintContract
     │   ├── Assigns contributor to bounty
     │   └── Emits bounty_claimed event
     │
-    └── complete_bounty()
-        ├── Validates verifier auth
-        ├── Transfers tokens via TokenClient
-        ├── Updates contributor reputation
-        ├── Emits bounty_completed event
-        └── Emits reward_paid event
+    ├── complete_bounty()
+    │   ├── Validates verifier auth
+    │   ├── Transfers tokens via TokenClient
+    │   ├── Updates contributor reputation
+    │   ├── Emits bounty_completed event
+    │   └── Emits reward_paid event
+    │
+    ├── cancel_bounty()
+    │   ├── Validates creator auth
+    │   ├── Sets status to "cancelled"
+    │   └── Emits bounty_cancelled event
+    │
+    └── expire_bounty()
+        ├── Validates caller auth (permissionless)
+        ├── Checks deadline has passed
+        ├── Sets status to "cancelled"
+        └── Emits bounty_expired event
 ```
 
 ## Storage Layout
@@ -40,10 +51,180 @@ MergeMintContract
 | bounty_claimed | (Symbol, contributor) | bounty_id |
 | bounty_completed | (Symbol, contributor) | bounty_id |
 | reward_paid | (Symbol, contributor) | (bounty_id, amount) |
+| bounty_cancelled | (Symbol, creator) | bounty_id |
+| bounty_expired | (Symbol, creator) | bounty_id |
+
+---
+
+## Bounty Lifecycle State Machine
+
+### States
+
+| State | Description |
+|-------|-------------|
+| `open` | Bounty is available for contributors to claim. |
+| `in_progress` | A contributor has claimed the bounty and is working on it. |
+| `completed` | The bounty has been verified and the reward has been paid out. |
+| `cancelled` | The bounty was cancelled by its creator, or expired after its deadline passed. |
+
+> **Note:** `disputed` is a planned future state for contested completions. It is not yet implemented.
+
+---
+
+### State Transition Diagram
+
+```
+                    create_bounty()
+                         │
+                         ▼
+                   ┌──────────┐
+         ┌────────▶│   open   │──────────────────┐
+         │         └────┬─────┘                  │
+         │              │                        │
+         │        claim_bounty()           cancel_bounty()   expire_bounty()
+         │         (contributor)            (creator only)    (permissionless,
+         │              │                        │             deadline passed)
+         │              ▼                        ▼                   │
+         │      ┌──────────────┐          ┌───────────┐ ◀───────────┘
+         │      │ in_progress  │          │ cancelled │
+         │      └──────┬───────┘          └───────────┘
+         │             │
+         │      complete_bounty()
+         │         (verifier)
+         │             │
+         │             ▼
+         │      ┌───────────┐
+         └──────│ completed │   (terminal — no transitions out)
+                └───────────┘
+```
+
+---
+
+### Transition Reference Table
+
+Each row describes one valid state transition.
+
+| From | To | Triggering Function | Auth Requirement | Pre-conditions (Guards) | Post-conditions |
+|------|----|---------------------|-----------------|------------------------|-----------------|
+| — | `open` | `create_bounty` | `creator.require_auth()` | None | Bounty stored; `BountyCount` incremented; `bounty_created` event emitted |
+| `open` | `in_progress` | `claim_bounty` | `contributor.require_auth()` | `bounty.assignee` is `None` (not yet claimed) | `bounty.assignee` set; `bounty.status = "in_progress"`; `bounty_claimed` event emitted |
+| `in_progress` | `completed` | `complete_bounty` | `verifier.require_auth()` | `bounty.assignee` is `Some(_)` | Token transfer from `verifier` to `assignee`; contributor reputation +10; `bounty_completed` + `reward_paid` events emitted |
+| `open` | `cancelled` | `cancel_bounty` | `caller.require_auth()` | `bounty.creator == caller`; `bounty.status == "open"` | `bounty.status = "cancelled"`; `bounty_cancelled` event emitted; *(escrow refund once implemented)* |
+| `open` | `cancelled` | `expire_bounty` | `caller.require_auth()` *(any caller)* | `bounty.deadline` is `Some(d)`; `env.ledger().sequence() > d`; `bounty.status == "open"` | `bounty.status = "cancelled"`; `bounty_expired` event emitted; *(escrow refund once implemented)* |
+
+---
+
+### Per-State Detail
+
+#### `open`
+
+The initial state of every bounty after `create_bounty`.
+
+Valid exits:
+- → `in_progress` via `claim_bounty` (any authenticated contributor, bounty not yet assigned)
+- → `cancelled` via `cancel_bounty` (creator only, bounty still open)
+- → `cancelled` via `expire_bounty` (anyone, deadline set and passed)
+
+No valid entries from other states (creation only).
+
+---
+
+#### `in_progress`
+
+The bounty has been claimed by a contributor who is working on it.
+
+Valid exits:
+- → `completed` via `complete_bounty` (verifier with funds, assignee must exist)
+
+Invalid transitions (will panic):
+- `cancel_bounty` on an `in_progress` bounty → panics `"bounty is not open"`
+- `expire_bounty` on an `in_progress` bounty → panics `"bounty is not open"`
+- `claim_bounty` again → panics `"bounty already assigned"`
+
+---
+
+#### `completed`
+
+Terminal state. The reward has been transferred and the contributor's reputation updated.
+
+No valid exits. Any function that reads status and expects `open` or `in_progress` will reject a completed bounty.
+
+---
+
+#### `cancelled`
+
+Terminal state. Reached via `cancel_bounty` (creator-initiated) or `expire_bounty` (deadline-triggered).
+
+No valid exits. Once cancelled, the bounty ID is permanently inactive. Escrowed tokens will be refunded to the creator once escrow is implemented.
+
+The two paths into `cancelled` emit different events to let off-chain indexers distinguish intentional cancellations from deadline expiries:
+- Intentional: `bounty_cancelled` (topic: `creator`)
+- Deadline expiry: `bounty_expired` (topic: `creator`)
+
+---
+
+### Auth and Permission Summary
+
+| Function | Who can call | Restricted by |
+|----------|-------------|---------------|
+| `create_bounty` | Anyone (they become the creator) | `creator.require_auth()` |
+| `claim_bounty` | Anyone (they become the assignee) | `contributor.require_auth()`; bounty must be unassigned |
+| `complete_bounty` | Anyone with the reward tokens (verifier) | `verifier.require_auth()`; assignee must exist |
+| `cancel_bounty` | Creator only | `caller.require_auth()` + `bounty.creator == caller` check |
+| `expire_bounty` | Anyone (permissionless expiry) | `caller.require_auth()`; deadline must be set and passed |
+
+**Design note on `expire_bounty` being permissionless:** the creator may be offline or unresponsive, but the bounty's deadline still needs to be enforced to clean the open list and (eventually) release escrowed funds. Allowing any authenticated caller to trigger expiry ensures liveness without compromising security — the caller cannot change the outcome, only initiate a state change that the on-chain guards would allow anyway.
+
+---
+
+### Guard Failure Messages
+
+| Guard | Panic message |
+|-------|---------------|
+| Bounty does not exist | `"bounty not found"` |
+| Bounty already has an assignee | `"bounty already assigned"` |
+| Bounty has no assignee | `"bounty has no assignee"` |
+| Caller is not the bounty creator | `"not the bounty creator"` |
+| Bounty is not in `open` state | `"bounty is not open"` |
+| Bounty has no deadline set | `"bounty has no deadline"` |
+| Deadline has not yet passed | `"bounty deadline has not passed"` |
+
+---
 
 ## Security Model
 
 - All state-changing functions require caller authentication via `require_auth()`
-- Token transfers use Soroban's TokenInterface for safe transfers
+- Token transfers use Soroban's `TokenInterface` for safe transfers
 - Bounty assignment is one-to-one — cannot claim already-assigned bounties
+- Only the bounty creator can cancel an open bounty (explicit identity check, not just auth)
+- `expire_bounty` is intentionally permissionless but all guards are enforced on-chain
 - Reputation is monotonically increasing
+
+## Storage Rent and TTL Management
+
+### What Is TTL?
+
+Soroban persistent storage is not free indefinitely. Each stored entry has a Time-To-Live (TTL) measured in **ledger sequences**. When an entry's TTL expires, the entry becomes archived and inaccessible until explicitly restored (at additional cost).
+
+### Default TTL
+
+- **Persistent storage default**: ~100,000 ledger sequences (~6 months)
+- Current Soroban network: ~5-10 minute confirmation time per ledger
+
+### Implications for MergeMint
+
+If a bounty or contributor profile is not accessed for an extended period, its entry may expire. This is critical because:
+
+1. **Bounties**: Unexpired bounties remain accessible until TTL expires
+2. **Contributor Profiles**: Reputation data and earnings history could become inaccessible if not extended
+3. **Escrow Risk**: Any escrowed tokens held against an expired bounty entry cannot be transferred until the entry is restored
+
+### TTL Extension Strategy
+
+Currently, MergeMint does not extend TTLs within contract logic. Future versions should:
+
+- Extend entry TTLs on each access (read or write)
+- Implement a separate TTL management contract function
+- Document expected uptime requirements for contracts
+
+For production deployments, monitor entry access patterns and explicitly extend TTLs before expiration.
