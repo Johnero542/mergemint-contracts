@@ -5,15 +5,14 @@ use soroban_sdk::{testutils::Address as _, token, Address, Env, Symbol};
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
 
-fn setup_test() -> (Env, Address, Address, Address) {
+fn setup_test() -> (Env, Address, Address) {
     let env = Env::default();
     let creator = Address::generate(&env);
     let contributor = Address::generate(&env);
-    let verifier = Address::generate(&env);
 
     env.mock_all_auths();
 
-    (env, creator, contributor, verifier)
+    (env, creator, contributor)
 }
 
 fn create_test_bounty(
