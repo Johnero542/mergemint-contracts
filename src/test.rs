@@ -407,3 +407,77 @@ fn test_status_index_tracks_bounty_lifecycle() {
     assert_eq!(client.get_bounties_by_status(&open_status).len(), 0);
     assert_eq!(client.get_bounties_by_status(&cancelled_status).len(), 1);
 }
+
+#[test]
+fn test_status_index_open_on_create() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+    let token = Address::generate(&env);
+
+    let id = create_bounty_helper(&client, &env, &creator, &token, "bounty_x");
+
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    assert_eq!(open_ids.len(), 1);
+    assert_eq!(open_ids.get(0).unwrap(), id);
+}
+
+#[test]
+fn test_status_index_moves_on_claim() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+    let token = Address::generate(&env);
+
+    let id = create_bounty_helper(&client, &env, &creator, &token, "bounty_y");
+    client.claim_bounty(&contributor, &id);
+
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    let in_progress_ids = client.get_bounties_by_status(&Symbol::new(&env, "in_progress"));
+    assert_eq!(open_ids.len(), 0);
+    assert_eq!(in_progress_ids.len(), 1);
+    assert_eq!(in_progress_ids.get(0).unwrap(), id);
+}
+
+#[test]
+fn test_status_index_moves_on_cancel() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+    let token = Address::generate(&env);
+
+    let id = create_bounty_helper(&client, &env, &creator, &token, "bounty_z");
+    client.cancel_bounty(&creator, &id);
+
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    let cancelled_ids = client.get_bounties_by_status(&Symbol::new(&env, "cancelled"));
+    assert_eq!(open_ids.len(), 0);
+    assert_eq!(cancelled_ids.len(), 1);
+    assert_eq!(cancelled_ids.get(0).unwrap(), id);
+}
+
+#[test]
+fn test_status_index_multiple_bounties() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+    let token = Address::generate(&env);
+
+    let id1 = create_bounty_helper(&client, &env, &creator, &token, "b_multi1");
+    let id2 = create_bounty_helper(&client, &env, &creator, &token, "b_multi2");
+    let id3 = create_bounty_helper(&client, &env, &creator, &token, "b_multi3");
+
+    client.claim_bounty(&contributor, &id2);
+    client.cancel_bounty(&creator, &id3);
+
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    let in_progress_ids = client.get_bounties_by_status(&Symbol::new(&env, "in_progress"));
+    let cancelled_ids = client.get_bounties_by_status(&Symbol::new(&env, "cancelled"));
+
+    assert_eq!(open_ids.len(), 1);
+    assert_eq!(open_ids.get(0).unwrap(), id1);
+    assert_eq!(in_progress_ids.len(), 1);
+    assert_eq!(in_progress_ids.get(0).unwrap(), id2);
+    assert_eq!(cancelled_ids.len(), 1);
+    assert_eq!(cancelled_ids.get(0).unwrap(), id3);
+}
