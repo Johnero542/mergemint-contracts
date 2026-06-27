@@ -90,7 +90,6 @@ impl MergeMintContract {
 
         storage::store_contributor(&env, &assignee, &contributor);
 
-        events::emit_bounty_completed(&env, &bounty_id, &assignee);
         events::emit_reward_paid(&env, &bounty_id, &assignee, &bounty.reward_amount);
     }
 
