@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol,
-};
+use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, BytesN, Env, Symbol};
 
 use crate::events;
 use crate::storage;
@@ -30,6 +28,7 @@ impl MergeMintContract {
         description: Symbol,
         reward_amount: i128,
         reward_token: Address,
+        min_reputation: u32,
     ) -> BytesN<32> {
         creator.require_auth();
 
@@ -44,10 +43,12 @@ impl MergeMintContract {
             reward_token,
             assignee: None,
             status: Symbol::new(&env, STATUS_OPEN),
+            min_reputation,
         };
 
         storage::store_bounty(&env, &id, &bounty);
         storage::set_bounty_count(&env, &(count + 1));
+        storage::add_bounty_to_status(&env, &id, &bounty.status);
 
         events::emit_bounty_created(&env, &id, &bounty.creator, &reward_amount);
         id
@@ -62,22 +63,31 @@ impl MergeMintContract {
             panic!("bounty already assigned");
         }
 
+        if bounty.min_reputation > 0 {
+            let contributor_profile = storage::get_contributor(&env, &contributor).unwrap_or(Contributor {
+                address: contributor.clone(),
+                reputation: 0,
+                total_earned: 0,
+                contribution_count: 0,
+            });
+            if contributor_profile.reputation < bounty.min_reputation {
+                panic!("contributor reputation is too low");
+            }
+        }
+
         bounty.assignee = Some(contributor.clone());
         bounty.status = Symbol::new(&env, STATUS_IN_PROGRESS);
 
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
     }
 
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
         verifier.require_auth();
 
-        let bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
         let assignee = bounty.assignee.clone().expect("bounty has no assignee");
-
-        let token = TokenClient::new(&env, &bounty.reward_token);
-        token.transfer(&verifier, &assignee, &bounty.reward_amount);
-
         let mut contributor = storage::get_contributor(&env, &assignee).unwrap_or(Contributor {
             address: assignee.clone(),
             reputation: 0,
@@ -85,50 +95,57 @@ impl MergeMintContract {
             contribution_count: 0,
         });
 
+        // --- external call ---
+        TokenClient::new(&env, &bounty.reward_token).transfer(
+            &verifier,
+            &assignee,
+            &bounty.reward_amount,
+        );
+
+        // --- in-memory mutations ---
         contributor.reputation += 10;
         contributor.total_earned += bounty.reward_amount;
         contributor.contribution_count += 1;
 
+        // --- writes ---
         storage::store_contributor(&env, &assignee, &contributor);
 
-        let mut completed_bounty = storage::get_bounty(&env, &bounty_id).unwrap();
-        completed_bounty.status = Symbol::new(&env, STATUS_COMPLETED);
-        storage::store_bounty(&env, &bounty_id, &completed_bounty);
+        bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
 
         events::emit_bounty_completed(&env, &bounty_id, &assignee);
         events::emit_reward_paid(&env, &bounty_id, &assignee, &bounty.reward_amount);
     }
 
-    pub fn update_bounty(
-        env: Env,
-        creator: Address,
-        bounty_id: BytesN<32>,
-        new_reward_amount: i128,
-    ) {
+    pub fn raise_dispute(env: Env, caller: Address, bounty_id: BytesN<32>) {
+        caller.require_auth();
+
+        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let assignee = bounty.assignee.clone();
+
+        if caller != bounty.creator && Some(caller.clone()) != assignee {
+            panic!("only creator or assignee can raise dispute");
+        }
+
+        bounty.status = Symbol::new(&env, STATUS_DISPUTED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+        events::emit_bounty_disputed(&env, &bounty_id, &caller);
+    }
+
+    pub fn update_bounty(env: Env, creator: Address, bounty_id: BytesN<32>, title: Symbol, description: Symbol) {
         creator.require_auth();
 
         let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
 
         if bounty.creator != creator {
-            panic!("only the creator can update a bounty");
+            panic!("only creator can update bounty");
         }
 
-        let open = Symbol::new(&env, STATUS_OPEN);
-        let in_progress = Symbol::new(&env, STATUS_IN_PROGRESS);
-        let completed = Symbol::new(&env, STATUS_COMPLETED);
+        bounty.title = title;
+        bounty.description = description;
 
-        if bounty.status == in_progress {
-            panic!("cannot update a bounty that is in progress");
-        }
-        if bounty.status == completed {
-            panic!("cannot update a completed bounty");
-        }
-        if bounty.status != open {
-            panic!("bounty is not open");
-        }
-
-        bounty.reward_amount = new_reward_amount;
         storage::store_bounty(&env, &bounty_id, &bounty);
+        events::emit_bounty_updated(&env, &bounty_id, &creator);
     }
 
     pub fn get_bounty(env: Env, bounty_id: BytesN<32>) -> Option<Bounty> {
@@ -141,5 +158,9 @@ impl MergeMintContract {
 
     pub fn get_bounty_count(env: Env) -> u64 {
         storage::get_bounty_count(&env)
+    }
+
+    pub fn get_bounties_by_status(env: Env, status: Symbol) -> soroban_sdk::Vec<BytesN<32>> {
+        storage::get_bounties_by_status(&env, &status)
     }
 }
