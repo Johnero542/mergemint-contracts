@@ -1,0 +1,43 @@
+name: Stale Issues and PRs
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v9
+        with:
+          # Issues: stale after 60 days, close after 90 days
+          days-before-issue-stale: 60
+          days-before-issue-close: 30
+          stale-issue-label: stale
+          stale-issue-message: >
+            This issue has been automatically marked as stale due to 60 days of
+            inactivity. It will be closed in 30 days unless there is new activity.
+            If this issue is still relevant, please leave a comment or reopen it.
+          close-issue-message: >
+            This issue has been closed due to inactivity. If it is still relevant,
+            please reopen it or create a new issue with updated context.
+
+          # PRs: stale after 30 days, close after 45 days (15 more days after stale)
+          days-before-pr-stale: 30
+          days-before-pr-close: 15
+          stale-pr-label: stale
+          stale-pr-message: >
+            This pull request has been automatically marked as stale due to 30 days
+            of inactivity. It will be closed in 15 days unless there is new activity.
+            If this PR is still relevant, please push an update or leave a comment.
+          close-pr-message: >
+            This pull request has been closed due to inactivity. If it is still
+            relevant, please reopen it or open a new PR with updated changes.
+
+          # Exempt labels
+          exempt-issue-labels: 'pinned,security,in-progress'
+          exempt-pr-labels: 'pinned,security,in-progress'

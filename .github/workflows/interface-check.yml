@@ -1,0 +1,48 @@
+name: Interface Compatibility Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  interface-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Stellar CLI
+        run: cargo install stellar-cli
+
+      - name: Build contract
+        run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Generate interface
+        run: stellar contract inspect target/wasm32-unknown-unknown/release/mergemint_contracts.wasm > current-interface.json
+        continue-on-error: true
+
+      - name: Check interface baseline exists
+        run: |
+          if [ ! -f interface-baseline.json ]; then
+            echo "Warning: interface-baseline.json not found. Create with: stellar contract inspect ... > interface-baseline.json"
+            exit 0
+          fi
+
+      - name: Compare interfaces
+        run: |
+          if diff -q interface-baseline.json current-interface.json > /dev/null 2>&1; then
+            echo "✓ Interface compatible"
+          else
+            echo "✗ Interface has changed!"
+            echo ""
+            echo "Changes:"
+            diff interface-baseline.json current-interface.json || true
+            exit 1
+          fi
