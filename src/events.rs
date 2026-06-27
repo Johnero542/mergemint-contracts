@@ -23,3 +23,19 @@ pub fn emit_reward_paid(env: &Env, bounty_id: &BytesN<32>, contributor: &Address
     env.events()
         .publish((topic, contributor.clone()), (bounty_id.clone(), *amount));
 }
+
+pub fn emit_bounty_disputed(env: &Env, bounty_id: &BytesN<32>, caller: &Address) {
+    let topic = Symbol::new(env, "bounty_disputed");
+    env.events().publish(
+        (topic, caller.clone()),
+        bounty_id.clone(),
+    );
+}
+
+pub fn emit_bounty_updated(env: &Env, bounty_id: &BytesN<32>, creator: &Address) {
+    let topic = Symbol::new(env, "bounty_updated");
+    env.events().publish(
+        (topic, creator.clone()),
+        bounty_id.clone(),
+    );
+}
