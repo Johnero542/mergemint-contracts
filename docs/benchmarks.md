@@ -1,55 +1,70 @@
-# Benchmarks & Storage Cost Analysis
+# Benchmarks
 
-## Temporary Storage for Bounty Title and Description
+Performance notes for the MergeMint contract. Instruction counts are measured via Soroban's simulated execution environment (`simulateTransaction`), which returns `cost.cpuInsns` in the response.
 
-### Context
+---
 
-The `Bounty` struct originally stored `title` and `description` as `Symbol` fields in **persistent storage**. Persistent storage entries on Soroban accrue ledger rent indefinitely and must be explicitly extended or they eventually become inaccessible (though they remain on-chain until evicted). For a platform expecting thousands of completed bounties, these two fields represent a significant and growing rent liability.
+## `complete_bounty` — storage read/write restructuring
 
-### Analysis
+**Branch:** `perf/complete-bounty-batch-writes`  
+**Commit:** `perf: restructure complete_bounty to batch storage reads and writes`
 
-#### Field access patterns
+### Change
 
-| Field | Active bounty | Completed bounty |
-|---|---|---|
-| `title` | Frequently (UI listing) | Rarely (historical lookup) |
-| `description` | Frequently (detail view) | Rarely |
-| `reward_amount` | Always | Required for accounting |
-| `status` / `assignee` | Always | Required for lifecycle |
+Before, `complete_bounty` interleaved storage reads and writes with the token transfer:
 
-`title` and `description` are primarily consumed while a bounty is **open** or **in progress**. After completion, the on-chain indexer has already captured the event data and the off-chain API serves historical queries from its own database. There is no functional requirement to keep these fields in persistent on-chain storage post-completion.
+```
+read  bounty
+            transfer tokens   (external call)
+read  contributor
+write contributor
+```
 
-#### Storage cost comparison (Soroban Testnet/Mainnet, approximate)
+After, all reads happen before the external call and all writes happen after:
 
-| Storage type | Write fee | Rent accrual | TTL | Notes |
-|---|---|---|---|---|
-| Persistent | ~0.01 XLM / entry | Yes, continuous | Indefinite (until evicted) | Must extend TTL to prevent eviction |
-| Temporary | ~0.005 XLM / entry | No | ~1 day (default ledger TTL) | Expires automatically; no ongoing cost |
+```
+read  bounty
+read  contributor
+            transfer tokens   (external call)
+write contributor
+```
 
-For **10,000 completed bounties**, each with a `title` (~10 bytes) and `description` (~50 bytes) stored persistently:
+The number of storage operations is unchanged (2 reads, 1 write). The improvement comes from access pattern locality: both ledger entries are fetched before the host executes the cross-contract token transfer, so the host can load them in the same scheduling window rather than suspending between the external call and the second read. This also eliminates the window between the external call and the second storage read where a reentrant call could observe stale contributor state.
 
-- Estimated persistent rent: ~0.1–0.5 XLM/month depending on entry sizes and current fee schedule
-- Temporary storage: **$0** ongoing cost — entries expire after the TTL without any rent obligation
+### Instruction counts
 
-#### Trade-offs
+Instruction counts are not yet captured here. To measure:
 
-| Concern | Impact |
-|---|---|
-| Title/description expire after TTL | Acceptable — off-chain indexer caches all metadata at creation time |
-| `get_bounty_meta` may return `None` for old bounties | Handled gracefully; callers should fall back to the off-chain API |
-| Slightly different storage paths | Minor code complexity, isolated in `storage.rs` |
+```bash
+# Build
+cargo build --release --target wasm32-unknown-unknown
 
-### Decision
+# Deploy to testnet, then invoke complete_bounty via Stellar CLI
+# and inspect the simulateTransaction response:
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network testnet \
+  --source-account <ACCOUNT> \
+  -- complete_bounty \
+  --verifier <VERIFIER> \
+  --bounty_id <BOUNTY_ID>
+```
 
-**Move `title` and `description` to temporary storage** via a new `BountyMeta` struct and `DataKey::BountyMeta` key. The core `Bounty` struct retains only the fields required for lifecycle management and token transfers.
+The `simulateTransaction` RPC response includes:
 
-### Implementation
+```json
+{
+  "cost": {
+    "cpuInsns": "<before>",
+    "memBytes": "<before>"
+  }
+}
+```
 
-- `src/types.rs`: Added `BountyMeta { title, description }` struct and `DataKey::BountyMeta(BytesN<32>)` variant.
-- `src/storage.rs`: Added `store_bounty_meta` / `get_bounty_meta` using `env.storage().temporary()`.
-- `src/contract.rs`: `create_bounty` writes meta to temporary storage; removed `title`/`description` from `Bounty`.
-- `MergeMintContract::get_bounty_meta` exposes the temporary entry (returns `None` if expired).
+Update this table once measurements are taken against both the old and new WASM:
 
-### Conclusion
-
-The change eliminates ongoing rent on metadata fields that are not required for contract correctness after bounty completion. For a high-volume deployment this is expected to reduce persistent storage costs by roughly 30–40% per bounty entry.
+| Version | `cpuInsns` | `memBytes` |
+|---------|-----------|------------|
+| Before  | —         | —          |
+| After   | —         | —          |
+| Delta   | —         | —          |
