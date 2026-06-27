@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use soroban_sdk::{contracttype, Address, BytesN, Symbol};
 
 #[derive(Clone, Debug, Eq, PartialEq)]

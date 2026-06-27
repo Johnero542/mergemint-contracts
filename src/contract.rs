@@ -50,6 +50,10 @@ impl MergeMintContract {
         storage::set_bounty_count(&env, &(count + 1));
         storage::add_bounty_to_status(&env, &id, &bounty.status);
 
+        let mut open = storage::get_open_bounties(&env);
+        open.push_back(id.clone());
+        storage::set_open_bounties(&env, &open);
+
         events::emit_bounty_created(&env, &id, &bounty.creator, &reward_amount);
         id
     }
@@ -85,6 +89,12 @@ impl MergeMintContract {
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
+
+        let mut open = storage::get_open_bounties(&env);
+        if let Some(pos) = open.iter().position(|id| id == bounty_id) {
+            open.remove(pos as u32);
+        }
+        storage::set_open_bounties(&env, &open);
     }
 
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
