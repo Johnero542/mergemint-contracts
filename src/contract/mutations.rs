@@ -3,7 +3,7 @@ use soroban_sdk::{contractimpl, token::TokenClient, Address, BytesN, Env, Symbol
 use crate::errors;
 use crate::events;
 use crate::storage;
-use crate::types::{Bounty, BountyMeta, Contributor};
+use crate::types::{Bounty, BountyId, BountyMeta, Contributor};
 
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
@@ -11,15 +11,34 @@ const STATUS_COMPLETED: &str = "completed";
 const STATUS_CANCELLED: &str = "cancelled";
 const STATUS_DISPUTED: &str = "disputed";
 
-fn generate_bounty_id(env: &Env, count: u64) -> BytesN<32> {
+fn generate_bounty_id(env: &Env, count: u64) -> BountyId {
     let mut buf = [0u8; 32];
     let count_bytes = count.to_be_bytes();
     buf[24..32].copy_from_slice(&count_bytes);
-    BytesN::from_array(env, &buf)
+    BountyId(BytesN::from_array(env, &buf))
 }
 
 #[contractimpl]
 impl MergeMintContract {
+    /// Create a new bounty.
+    ///
+    /// The caller must be the `creator` (enforced by `require_auth`).
+    /// The bounty is initialised with `"open"` status and `max_assignees = 1`.
+    ///
+    /// # Arguments
+    /// * `creator` - Wallet that will own and manage this bounty.
+    /// * `title` - Short human-readable title (max 32 chars via `Symbol`).
+    /// * `description` - Longer description of the work required.
+    /// * `reward_amount` - Raw token units for the reward. Must be positive.
+    /// * `reward_token` - Soroban token contract address used for payout.
+    /// * `min_reputation` - Minimum reputation score required to claim (0 = no minimum).
+    /// * `deadline` - Optional ledger sequence deadline after which the bounty cannot be claimed.
+    ///
+    /// # Returns
+    /// The newly generated `BountyId` that uniquely identifies this bounty.
+    ///
+    /// # Authorization
+    /// Requires auth from `creator`.
     pub fn create_bounty(
         env: Env,
         creator: Address,
@@ -29,7 +48,7 @@ impl MergeMintContract {
         reward_token: Address,
         min_reputation: u32,
         deadline: Option<u32>,
-    ) -> BytesN<32> {
+    ) -> BountyId {
         creator.require_auth();
 
         let count = storage::get_bounty_count(&env);
@@ -61,9 +80,27 @@ impl MergeMintContract {
         id
     }
 
-    /// Claim an open bounty. A contributor receives the full reward when claiming
-    /// a single-assignee bounty (`max_assignees == 1`).
-    pub fn claim_bounty(env: Env, contributor: Address, bounty_id: BytesN<32>) {
+    /// Claim an open bounty.
+    ///
+    /// A contributor receives 10 000 basis points (full reward) when claiming a
+    /// single-assignee bounty (`max_assignees == 1`). The contributor is added to
+    /// the bounty's `assignees` list and the status transitions to `"in_progress"`.
+    ///
+    /// # Arguments
+    /// * `contributor` - Wallet claiming the bounty.
+    /// * `bounty_id` - The bounty to claim.
+    ///
+    /// # Panics
+    /// * If `bounty_id` does not exist.
+    /// * If the bounty is already at `max_assignees` capacity.
+    /// * If the contributor is already an assignee on this bounty.
+    /// * If the contributor already has an active claim on another bounty.
+    /// * If the bounty deadline has passed (`env.ledger().sequence() > deadline`).
+    /// * If the contributor's reputation is below `min_reputation`.
+    ///
+    /// # Authorization
+    /// Requires auth from `contributor`.
+    pub fn claim_bounty(env: Env, contributor: Address, bounty_id: BountyId) {
         contributor.require_auth();
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
@@ -133,9 +170,25 @@ impl MergeMintContract {
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
     }
 
-    /// Complete a bounty: distribute `reward_amount` proportionally across all assignees
-    /// according to their basis-point shares (shares sum to 10 000).
-    pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
+    /// Complete a bounty and distribute the reward.
+    ///
+    /// Transfers `reward_amount` from `verifier` to each assignee proportionally
+    /// according to their basis-point share. Each assignee's reputation increases
+    /// by 10 and their `active_claims` is decremented. The bounty status transitions
+    /// to `"completed"`.
+    ///
+    /// # Arguments
+    /// * `verifier` - Wallet that holds the tokens and initiates the payout.
+    /// * `bounty_id` - The bounty to complete.
+    ///
+    /// # Panics
+    /// * If `bounty_id` does not exist.
+    /// * If the bounty has no assignees.
+    /// * If the token transfer fails (insufficient balance, no allowance, etc.).
+    ///
+    /// # Authorization
+    /// Requires auth from `verifier`.
+    pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BountyId) {
         verifier.require_auth();
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
@@ -185,7 +238,22 @@ impl MergeMintContract {
         events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
     }
 
-    pub fn raise_dispute(env: Env, caller: Address, bounty_id: BytesN<32>) {
+    /// Raise a dispute on a bounty.
+    ///
+    /// Only the bounty creator or an existing assignee may call this.
+    /// Transitions the bounty status to `"disputed"`.
+    ///
+    /// # Arguments
+    /// * `caller` - Wallet raising the dispute.
+    /// * `bounty_id` - The bounty to dispute.
+    ///
+    /// # Panics
+    /// * If `bounty_id` does not exist.
+    /// * If `caller` is neither the creator nor an assignee.
+    ///
+    /// # Authorization
+    /// Requires auth from `caller`.
+    pub fn raise_dispute(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
         let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
@@ -204,7 +272,16 @@ impl MergeMintContract {
     }
 
     /// Update the on-chain metadata URI for a contributor profile.
-    /// Only the contributor themselves may call this (enforced by `require_auth`).
+    ///
+    /// The `metadata` value is typically an IPFS hash or URL pointing to a JSON
+    /// document containing the contributor's name, avatar, GitHub username, etc.
+    ///
+    /// # Arguments
+    /// * `contributor` - Wallet whose metadata is being updated.
+    /// * `metadata` - New metadata URI (`Symbol`) to store.
+    ///
+    /// # Authorization
+    /// Requires auth from `contributor`. No other address may modify this field.
     pub fn update_contributor_metadata(env: Env, contributor: Address, metadata: Symbol) {
         contributor.require_auth();
 
@@ -222,8 +299,23 @@ impl MergeMintContract {
         storage::store_contributor(&env, &contributor, &contrib);
     }
 
-    /// Cancel a bounty. Only the creator can cancel an open bounty.
-    pub fn cancel_bounty(env: Env, caller: Address, bounty_id: BytesN<32>) {
+    /// Cancel an open bounty.
+    ///
+    /// Only the creator may cancel. The bounty must be in `"open"` status.
+    /// Transitions the bounty status to `"cancelled"`.
+    ///
+    /// # Arguments
+    /// * `caller` - Wallet requesting cancellation (must be the creator).
+    /// * `bounty_id` - The bounty to cancel.
+    ///
+    /// # Panics
+    /// * If `bounty_id` does not exist.
+    /// * If `caller` is not the bounty creator.
+    /// * If the bounty is not in `"open"` status.
+    ///
+    /// # Authorization
+    /// Requires auth from `caller`. Only the creator may cancel.
+    pub fn cancel_bounty(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
         let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
@@ -244,8 +336,24 @@ impl MergeMintContract {
     }
 
     /// Expire an open bounty whose deadline has passed.
-    /// Permissionless — any caller can trigger expiry to keep the open list clean.
-    pub fn expire_bounty(env: Env, caller: Address, bounty_id: BytesN<32>) {
+    ///
+    /// Permissionless: any caller may trigger expiry to keep the open-bounty list
+    /// clean. The bounty must have a deadline set and the current ledger sequence
+    /// must exceed that deadline. Transitions to `"cancelled"`.
+    ///
+    /// # Arguments
+    /// * `caller` - Wallet triggering the expiry (any authenticated address).
+    /// * `bounty_id` - The bounty to expire.
+    ///
+    /// # Panics
+    /// * If `bounty_id` does not exist.
+    /// * If the bounty has no deadline set.
+    /// * If the deadline has not yet passed.
+    /// * If the bounty is not in `"open"` status.
+    ///
+    /// # Authorization
+    /// Requires auth from `caller` (any authenticated wallet may trigger expiry).
+    pub fn expire_bounty(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
         let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
