@@ -52,7 +52,15 @@ If tests pass, snapshots are current.
 
 ## Code Style
 
-- Use `rustfmt` for formatting
+Before pushing, run both checks locally to avoid CI failures:
+
+```bash
+cargo fmt
+cargo clippy -- -D warnings
+```
+
+- `cargo fmt` enforces consistent formatting — CI runs `cargo fmt --check` and fails on any diff
+- `cargo clippy -- -D warnings` catches common Rust mistakes — CI treats every warning as an error
 - Follow Soroban SDK conventions
 - Document non-obvious logic with inline comments
 
