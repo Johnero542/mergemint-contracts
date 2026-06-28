@@ -11,3 +11,7 @@ pub const CONTRIBUTOR_HAS_ACTIVE_CLAIM: &str = "contributor already has an activ
 pub const BOUNTY_DEADLINE_PASSED: &str = "bounty deadline has passed";
 pub const BOUNTY_NO_DEADLINE: &str = "bounty has no deadline";
 pub const DEADLINE_NOT_PASSED: &str = "deadline has not passed yet";
+pub const VERIFIER_NOT_AUTHORIZED: &str = "verifier is not in the required verifiers list";
+pub const ALREADY_APPROVED: &str = "verifier has already approved this bounty";
+pub const BOUNTY_NOT_DISPUTED: &str = "bounty is not in disputed status";
+pub const NOT_ARBITRATOR: &str = "caller is not authorized to resolve this dispute";
