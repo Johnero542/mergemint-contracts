@@ -63,6 +63,8 @@ impl MergeMintContract {
             status: Symbol::new(&env, STATUS_OPEN),
             min_reputation,
             deadline,
+            required_verifiers: None,
+            approval_threshold: 1,
         };
 
         let meta = BountyMeta { title, description };
@@ -238,21 +240,88 @@ impl MergeMintContract {
         events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
     }
 
+    /// Record one verifier's approval for a multi-sig bounty completion.
+    /// When the number of unique approvals reaches approval_threshold, completion executes automatically.
+    /// Falls back to single-verifier behaviour when required_verifiers is None (any verifier completes directly).
+    pub fn approve_completion(env: Env, verifier: Address, bounty_id: BountyId) {
+        verifier.require_auth();
+
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+        };
+
+        if bounty.assignees.is_empty() {
+            panic!("{}", errors::BOUNTY_HAS_NO_ASSIGNEE);
+        }
+
+        // If no required_verifiers list is set, fall back to immediate single-verifier completion.
+        if bounty.required_verifiers.is_none() {
+            MergeMintContract::complete_bounty(env, verifier, bounty_id);
+            return;
+        }
+
+        let required = bounty.required_verifiers.clone().unwrap();
+        let is_authorized = required.iter().any(|v| v == verifier);
+        if !is_authorized {
+            panic!("{}", errors::VERIFIER_NOT_AUTHORIZED);
+        }
+
+        let mut approvals = storage::get_approvals(&env, &bounty_id);
+
+        // Guard against duplicate votes from the same verifier.
+        let already_voted = approvals.iter().any(|v| v == verifier);
+        if already_voted {
+            panic!("{}", errors::ALREADY_APPROVED);
+        }
+
+        approvals.push_back(verifier.clone());
+        storage::set_approvals(&env, &bounty_id, &approvals);
+
+        let approval_count = approvals.len();
+        events::emit_approval_recorded(&env, &bounty_id, &verifier, approval_count);
+
+        let threshold = if bounty.approval_threshold == 0 { 1 } else { bounty.approval_threshold };
+
+        if approval_count >= threshold {
+            let token = TokenClient::new(&env, &bounty.reward_token);
+
+            for (assignee, share_bp) in bounty.assignees.iter() {
+                let payout = (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
+                token.transfer(&verifier, &assignee, &payout);
+
+                let mut contrib = storage::get_contributor(&env, &assignee)
+                    .unwrap_or(Contributor {
+                        address: assignee.clone(),
+                        reputation: 0,
+                        total_earned: 0,
+                        contribution_count: 0,
+                        active_claims: 0,
+                        metadata: None,
+                    });
+
+                contrib.reputation += 10;
+                contrib.total_earned += payout;
+                contrib.contribution_count += 1;
+                if contrib.active_claims > 0 { contrib.active_claims -= 1; }
+
+                storage::store_contributor(&env, &assignee, &contrib);
+                events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+            }
+
+            let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
+            let previous_status = bounty.status.clone();
+            bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+            storage::store_bounty(&env, &bounty_id, &bounty);
+            storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+            events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
+        }
+    }
+
     /// Raise a dispute on a bounty.
     ///
     /// Only the bounty creator or an existing assignee may call this.
     /// Transitions the bounty status to `"disputed"`.
-    ///
-    /// # Arguments
-    /// * `caller` - Wallet raising the dispute.
-    /// * `bounty_id` - The bounty to dispute.
-    ///
-    /// # Panics
-    /// * If `bounty_id` does not exist.
-    /// * If `caller` is neither the creator nor an assignee.
-    ///
-    /// # Authorization
-    /// Requires auth from `caller`.
     pub fn raise_dispute(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
@@ -269,6 +338,79 @@ impl MergeMintContract {
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
         events::emit_bounty_disputed(&env, &bounty_id, &caller);
+    }
+
+    /// Resolve a disputed bounty. Only the bounty creator (acting as arbitrator) may call this.
+    /// resolution must be the Symbol "complete" (pay assignees) or "cancel" (refund creator).
+    pub fn resolve_dispute(
+        env: Env,
+        arbitrator: Address,
+        bounty_id: BountyId,
+        resolution: Symbol,
+    ) {
+        arbitrator.require_auth();
+
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+        };
+
+        if bounty.status != Symbol::new(&env, STATUS_DISPUTED) {
+            panic!("{}", errors::BOUNTY_NOT_DISPUTED);
+        }
+
+        // The arbitrator must be the bounty creator; there is no separate admin address.
+        if arbitrator != bounty.creator {
+            panic!("{}", errors::NOT_ARBITRATOR);
+        }
+
+        let resolve_complete = Symbol::new(&env, "complete");
+        let resolve_cancel = Symbol::new(&env, "cancel");
+
+        if resolution == resolve_complete {
+            let token = TokenClient::new(&env, &bounty.reward_token);
+
+            for (assignee, share_bp) in bounty.assignees.iter() {
+                let payout =
+                    (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
+                token.transfer(&env.current_contract_address(), &assignee, &payout);
+
+                let mut contrib = storage::get_contributor(&env, &assignee)
+                    .unwrap_or(Contributor {
+                        address: assignee.clone(),
+                        reputation: 0,
+                        total_earned: 0,
+                        contribution_count: 0,
+                        active_claims: 0,
+                        metadata: None,
+                    });
+
+                contrib.reputation += 10;
+                contrib.total_earned += payout;
+                contrib.contribution_count += 1;
+                if contrib.active_claims > 0 {
+                    contrib.active_claims -= 1;
+                }
+
+                storage::store_contributor(&env, &assignee, &contrib);
+                events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+            }
+
+            let previous_status = bounty.status.clone();
+            bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+            storage::store_bounty(&env, &bounty_id, &bounty);
+            storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+        } else if resolution == resolve_cancel {
+            // Escrow refund to creator goes here once escrow is implemented.
+            let previous_status = bounty.status.clone();
+            bounty.status = Symbol::new(&env, STATUS_CANCELLED);
+            storage::store_bounty(&env, &bounty_id, &bounty);
+            storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+        } else {
+            panic!("resolution must be 'complete' or 'cancel'");
+        }
+
+        events::emit_dispute_resolved(&env, &bounty_id, &arbitrator, &resolution);
     }
 
     /// Update the on-chain metadata URI for a contributor profile.

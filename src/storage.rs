@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env, Symbol, Vec};
+use soroban_sdk::{Address, BytesN, Env, Symbol, Vec};
 
 use crate::types::{Bounty, BountyId, BountyMeta, Contributor, DataKey};
 
@@ -179,6 +179,19 @@ pub fn move_bounty_status(
         remove_bounty_from_status(env, bounty_id, old_status);
         add_bounty_to_status(env, bounty_id, new_status);
     }
+}
+
+pub fn get_approvals(env: &Env, bounty_id: &BountyId) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Approvals(bounty_id.clone()))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn set_approvals(env: &Env, bounty_id: &BountyId, approvals: &Vec<Address>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Approvals(bounty_id.clone()), approvals);
 }
 
 pub fn get_open_bounties(env: &Env) -> Vec<BountyId> {
