@@ -17,6 +17,7 @@ Built with **Rust (`no_std`)** using the **Soroban SDK 23**, compiled to WASM (`
 - [Events](#events)
 - [Code Highlights](#code-highlights)
 - [Getting Started](#getting-started)
+- [CLI Usage](#cli-usage)
 - [Project Structure](#project-structure)
 - [Testing](#testing)
 - [Deployment](#deployment)
@@ -675,6 +676,176 @@ stellar contract deploy \
 
 echo "Deployment complete!"
 ```
+
+---
+
+## CLI Usage
+
+After deploying the contract, you can invoke each function directly with the **Stellar CLI**. Export these shell variables once to keep the examples concise:
+
+```bash
+export CONTRACT_ID=<your-deployed-contract-id>   # C... contract address
+export CREATOR=<your-stellar-address>             # G... public key or key alias
+export NETWORK=testnet
+```
+
+> **Type encoding quick reference**
+> | Soroban type | CLI encoding |
+> |---|---|
+> | `Address` | Stellar public key (`G...`) or key alias |
+> | `BytesN<32>` | 64-character lowercase hex string |
+> | `Symbol` | Alphanumeric + underscore string (max 32 chars, no spaces) |
+> | `i128` | Integer literal |
+> | `u32` | Integer literal |
+> | `Option<T>` | `null` for `None`; bare value for `Some(value)` |
+
+---
+
+### create_bounty
+
+Creates a new open bounty and returns the generated 32-byte bounty ID as a hex string. The `reward_amount` is in raw token units — for a token with 7 decimal places, 1 token = `10000000`. Set `min_reputation` to `0` to allow any contributor to claim, and pass `null` for `deadline` to leave the bounty open indefinitely.
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source $CREATOR \
+  --network $NETWORK \
+  -- create_bounty \
+  --creator $CREATOR \
+  --title "Fix_auth_timeout" \
+  --description "Resolve_session_expiry_in_login_flow" \
+  --reward_amount 10000000 \
+  --reward_token GBDTYLEFTNKBV6DCLAURRRXN6VWQPGSZYDVS9GVQWGYLXNUDGQE2HSTW \
+  --min_reputation 0 \
+  --deadline null
+```
+
+Example return value:
+
+```
+"0000000000000000000000000000000000000000000000000000000000000000"
+```
+
+> Bounty IDs are 32-byte big-endian encodings of an incrementing counter — bounty #0 is all zeros, bounty #1 ends in `...0001`, and so on. Copy the exact hex string returned here for use in `claim_bounty`, `complete_bounty`, and `get_bounty`.
+
+---
+
+### claim_bounty
+
+Assigns the calling contributor to an open bounty. The contributor must authenticate with `--source`. A contributor can only hold one active claim at a time.
+
+```bash
+export CONTRIBUTOR=GBCONTRIBUTORAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+export BOUNTY_ID=0000000000000000000000000000000000000000000000000000000000000000
+
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source $CONTRIBUTOR \
+  --network $NETWORK \
+  -- claim_bounty \
+  --contributor $CONTRIBUTOR \
+  --bounty_id $BOUNTY_ID
+```
+
+The command returns no value on success. It will panic if:
+- The bounty is already at assignee capacity
+- The contributor already has an active claim
+- The bounty deadline has passed
+
+---
+
+### complete_bounty
+
+Marks the bounty completed and transfers the reward from the verifier's wallet to the assignee(s). The verifier must hold at least `reward_amount` of the bounty's `reward_token` and must sign the transaction with `--source`.
+
+```bash
+export VERIFIER=GBVERIFIERAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+export BOUNTY_ID=0000000000000000000000000000000000000000000000000000000000000000
+
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source $VERIFIER \
+  --network $NETWORK \
+  -- complete_bounty \
+  --verifier $VERIFIER \
+  --bounty_id $BOUNTY_ID
+```
+
+On success the reward is transferred on-chain, the assignee's reputation increases by +10, and `bounty_completed` / `reward_paid` events are emitted.
+
+---
+
+### get_bounty
+
+Returns the full `Bounty` struct for a given ID, or `null` if the ID does not exist. Read-only — no state changes occur.
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source $CREATOR \
+  --network $NETWORK \
+  -- get_bounty \
+  --bounty_id 0000000000000000000000000000000000000000000000000000000000000000
+```
+
+Example output:
+
+```json
+{
+  "creator": "GABC...",
+  "reward_amount": "10000000",
+  "reward_token": "GBDT...",
+  "assignees": [],
+  "max_assignees": 1,
+  "status": "open",
+  "min_reputation": 0,
+  "deadline": null
+}
+```
+
+---
+
+### get_contributor
+
+Returns the `Contributor` profile for a wallet address, or `null` if the address has no recorded activity. Read-only — no state changes occur.
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source $CREATOR \
+  --network $NETWORK \
+  -- get_contributor \
+  --address GBCONTRIBUTORAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+```
+
+Example output:
+
+```json
+{
+  "address": "GBCO...",
+  "reputation": 10,
+  "total_earned": "10000000",
+  "contribution_count": 1,
+  "active_claims": 0,
+  "metadata": null
+}
+```
+
+---
+
+### get_bounty_count
+
+Returns the total number of bounties ever created (not the number currently open). Read-only — no state changes occur.
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source $CREATOR \
+  --network $NETWORK \
+  -- get_bounty_count
+```
+
+Example output: `1`
 
 ---
 
