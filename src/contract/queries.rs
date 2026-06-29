@@ -1,7 +1,5 @@
-use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
-
-use crate::storage;
-use crate::types::{Bounty, BountyId, BountyMeta, Contributor};
+// Queries are included directly into mod.rs via include!(), so all imports
+// from mod.rs are already in scope — no use statements needed here.
 
 #[contractimpl]
 impl MergeMintContract {

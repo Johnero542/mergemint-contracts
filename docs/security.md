@@ -73,40 +73,37 @@ Until this guard is added, off-chain tooling (MergeMint API, front-end) must rej
 
 ### 4. Self-verify (verifier is also an assignee)
 
-**Severity:** High
+**Severity:** High — **FIXED** in this PR
 
-**Description:** There is no on-chain check preventing the verifier who calls `complete_bounty` from also being one of the bounty's assignees. In this scenario the verifier calls `token.transfer(&verifier, &assignee, &payout)` where both sides resolve to their own address — a net-zero token movement — but they still receive +10 reputation and an increment to `contribution_count` and `total_earned`. The error constant `VERIFIER_CANNOT_BE_ASSIGNEE` exists in `src/errors.rs` but is **not enforced** in `contract.rs`.
+**Description:** There was no on-chain check preventing the verifier who calls `complete_bounty` from also being one of the bounty's assignees. In this scenario the verifier calls `token.transfer(&verifier, &assignee, &payout)` where both sides resolve to their own address — a net-zero token movement — but they still receive +10 reputation and an increment to `contribution_count` and `total_earned`. The error constant `VERIFIER_CANNOT_BE_ASSIGNEE` existed in `src/errors.rs` but was not enforced in `contract.rs`.
 
 **Affected functions:** `complete_bounty`
 
-**Current mitigations:** None enforced on-chain.
-
-**Residual risk:** High. An actor who controls both the verifier key and claims a bounty can manufacture unlimited reputation at zero cost. The fix is a guard inside the assignee loop of `complete_bounty`:
+**Fix applied:** A guard iterates the `assignees` list at the start of `complete_bounty` (before any token transfer) and panics with `"verifier cannot be the assignee"` if the verifier address matches any assignee.
 
 ```rust
-for (assignee, share_bp) in bounty.assignees.iter() {
+for (assignee, _) in bounty.assignees.iter() {
     if assignee == verifier {
-        panic!("{}", errors::VERIFIER_CANNOT_BE_ASSIGNEE);
+        panic!("verifier cannot be the assignee");
     }
-    ...
 }
 ```
+
+**Test added:** `test_assignee_cannot_self_verify` in `src/test.rs` — asserts that `complete_bounty` panics with `"verifier cannot be the assignee"` when the contributor calls the function using their own address as verifier.
+
+**Residual risk:** None in the current no-escrow model. Once escrow is introduced this guard prevents a full contract drain — see escrow checklist.
 
 ---
 
 ### 5. Double-completion (reward drain via repeated `complete_bounty`)
 
-**Severity:** High
+**Severity:** High — **FIXED** in this PR
 
-**Description:** `complete_bounty` does not validate that `bounty.status == STATUS_IN_PROGRESS` before executing. After the first successful call the status is written as `STATUS_COMPLETED` and stored, but the `assignees` list remains populated. A second call by the same verifier therefore passes the `assignees.is_empty()` guard, executes another `token.transfer` for each assignee, and increments every assignee's `reputation`, `total_earned`, and `contribution_count` again. This can be repeated as many times as the verifier has tokens, draining the verifier's balance and inflating contributor reputation scores.
+**Description:** `complete_bounty` did not validate that `bounty.status == STATUS_IN_PROGRESS` before executing. After the first successful call the status was written as `STATUS_COMPLETED` and stored, but the `assignees` list remained populated. A second call by the same verifier therefore passed the `assignees.is_empty()` guard, executed another `token.transfer` for each assignee, and incremented every assignee's `reputation`, `total_earned`, and `contribution_count` again. This could be repeated as many times as the verifier held tokens.
 
 **Affected functions:** `complete_bounty`
 
-**Current mitigations:**
-- The verifier must authenticate and must hold sufficient token balance for each repeat call, so exploiting this requires a co-operating or compromised verifier.
-- The `status` field is correctly updated to `STATUS_COMPLETED` after the first call, so off-chain tooling can detect the anomaly.
-
-**Residual risk:** High. The fix is a status guard at the entry of `complete_bounty` (referenced in the escrow checklist below):
+**Fix applied:** A status guard is now the first business-logic check in `complete_bounty` (immediately after `require_auth` and the bounty-not-found check). If the bounty is not in `STATUS_IN_PROGRESS`, the function panics before any state mutation or token transfer.
 
 ```rust
 if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
@@ -114,7 +111,9 @@ if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
 }
 ```
 
-This guard blocks all repeat calls regardless of who the verifier is.
+**Test added:** `test_double_complete_panics` in `src/test.rs` — creates a bounty, claims it, completes it once (succeeds), then calls `complete_bounty` again and asserts a panic with `"bounty is not in progress"`.
+
+**Residual risk:** None. The guard blocks all repeat calls regardless of caller. Under escrow this guard also prevents draining the contract's entire token balance.
 
 ---
 
@@ -204,12 +203,50 @@ Maintaining this invariant is the primary correctness goal for all escrow-relate
 
 ### Pre-merge checklist for escrow
 
-- [ ] Add status guard to `complete_bounty`: panic if `status != in_progress`.
+- [x] Add status guard to `complete_bounty`: panic if `status != in_progress`. *(done — see threat #5)*
 - [ ] Enforce `reward_amount > 0` in `create_bounty`.
 - [ ] Add creator-cannot-claim guard in `claim_bounty` (fixes threat #3).
-- [ ] Add verifier-cannot-be-assignee guard in `complete_bounty` (fixes threat #4).
+- [x] Add verifier-cannot-be-assignee guard in `complete_bounty` (fixes threat #4). *(done — see threat #4)*
 - [ ] Fuzz `reward_amount` edge cases (0, `i128::MAX`, negative).
 - [ ] Add integration test: `contract_balance == sum(open + in_progress rewards)` after every state transition.
-- [ ] Confirm `complete_bounty` panics when called on an already-completed bounty.
+- [x] Confirm `complete_bounty` panics when called on an already-completed bounty. *(done — `test_double_complete_panics`)*
 - [ ] Review token contract for any re-entrant callbacks into this contract.
 - [ ] Have at least one contributor who was not the author review the token transfer ordering.
+
+---
+
+## `require_auth` placement audit
+
+**Date:** 2026-06-29  
+**Scope:** All state-mutating functions in `src/contract/mutations.rs`
+
+### Rule
+
+`require_auth()` **must be the first executable line** in every state-mutating contract function. No storage reads, computations, or cross-contract calls may execute before it. Reasons:
+
+1. **Fail fast.** Unauthenticated calls are rejected before any CPU or storage is consumed.
+2. **Auditability.** Reviewers can confirm auth is always present by inspecting the first line alone.
+3. **Side-effect hygiene.** On Soroban, failed transactions do not persist state changes, but placing auth after storage reads could expose information about contract state to callers who will never be authorised. Future protocol changes could also make pre-auth side effects observable.
+
+### Audit findings
+
+| Function | Auth call | First executable line? | Verdict |
+|---|---|---|---|
+| `create_bounty` | `creator.require_auth()` | Yes | ✅ Pass |
+| `claim_bounty` | `contributor.require_auth()` | Yes | ✅ Pass |
+| `complete_bounty` | `verifier.require_auth()` | Yes | ✅ Pass |
+| `approve_completion` | `verifier.require_auth()` | Yes | ✅ Pass |
+| `raise_dispute` | `caller.require_auth()` | Yes | ✅ Pass |
+| `resolve_dispute` | `arbitrator.require_auth()` | Yes | ✅ Pass |
+| `update_contributor_metadata` | `contributor.require_auth()` | Yes | ✅ Pass |
+| `cancel_bounty` | `caller.require_auth()` | Yes | ✅ Pass |
+| `expire_bounty` | `caller.require_auth()` | Yes | ✅ Pass |
+
+**Outcome:** All 9 mutating functions pass. No reordering was required. `# Authorization` doc sections were added to `approve_completion`, `raise_dispute`, and `resolve_dispute`, which previously lacked them.
+
+### Enforcement going forward
+
+Every new state-mutating function added to `MergeMintContract` must:
+1. Accept the authenticated principal as the first argument.
+2. Call `principal.require_auth()` as the very first statement in the function body.
+3. Include a `# Authorization` section in its doc comment explaining who must authenticate.

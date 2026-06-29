@@ -19,7 +19,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 },
                 {
-                  "symbol": "bounty_dispute2"
+                  "symbol": "dispute_2"
                 },
                 {
                   "symbol": "desc"
@@ -251,6 +251,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "approval_threshold"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "assignees"
                       },
                       "val": {
@@ -300,6 +308,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_verifiers"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "reward_amount"
                       },
                       "val": {
@@ -328,7 +342,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -367,7 +381,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -428,7 +442,7 @@
                         "symbol": "title"
                       },
                       "val": {
-                        "symbol": "bounty_dispute2"
+                        "symbol": "dispute_2"
                       }
                     }
                   ]
@@ -529,6 +543,59 @@
             },
             "ext": "v0"
           },
+          6307200
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ContributorBounties"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ContributorBounties"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "vec": [
+                        {
+                          "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
           4095
         ]
       ],
@@ -568,7 +635,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -621,7 +688,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -666,7 +733,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -711,7 +778,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [

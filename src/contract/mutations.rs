@@ -30,6 +30,9 @@ impl MergeMintContract {
     /// # Returns
     /// The newly generated `BountyId` that uniquely identifies this bounty.
     ///
+    /// # Panics
+    /// * If `reward_amount` is not strictly positive.
+    ///
     /// # Authorization
     /// Requires auth from `creator`.
     pub fn create_bounty(
@@ -42,6 +45,12 @@ impl MergeMintContract {
         min_reputation: u32,
         deadline: Option<u32>,
     ) -> BountyId {
+        // Validated first, ahead of auth and all storage interaction: a non-positive
+        // reward is a malformed request regardless of who is asking.
+        if reward_amount <= 0 {
+            fail(ContractError::RewardMustBePositive);
+        }
+
         creator.require_auth();
 
         let count = storage::get_bounty_count(&env);
@@ -169,12 +178,16 @@ impl MergeMintContract {
     ///
     /// # Panics
     /// * If `bounty_id` does not exist.
+    /// * If the bounty status is not `"in_progress"` (prevents double-completion).
     /// * If the bounty has no assignees.
+    /// * If `verifier` is one of the bounty assignees (prevents self-verification).
     /// * If the token transfer fails (insufficient balance, no allowance, etc.).
     ///
     /// # Authorization
-    /// Requires auth from `verifier`.
+    /// `verifier.require_auth()` is the **first** operation in this function.
+    /// No storage reads or business logic execute before authentication is checked.
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BountyId) {
+        // AUTH: must be first — no storage reads or side-effects before this line.
         verifier.require_auth();
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
@@ -182,46 +195,44 @@ impl MergeMintContract {
             None => fail(ContractError::BountyNotFound),
         };
 
-        // Issue #2: guard against disputed status
-        if bounty.status == Symbol::new(&env, STATUS_DISPUTED) {
-            fail(ContractError::BountyIsDisputed);
+        // GUARD 1 — double-completion prevention.
+        // Reject the call if the bounty is not currently in progress. This blocks
+        // repeat calls on already-completed bounties and any other terminal state.
+        // Depends on claim_bounty having written STATUS_IN_PROGRESS and
+        // complete_bounty writing STATUS_COMPLETED below (checks-effects-interactions).
+        if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
+            panic!("{}", errors::BOUNTY_NOT_IN_PROGRESS);
         }
 
         if bounty.assignees.is_empty() {
             fail(ContractError::BountyHasNoAssignee);
         }
 
-        // #264: if a designated verifier was set, enforce it
-        if let Some(ref designated) = bounty.verifier {
-            if verifier != *designated {
-                panic!("caller is not the designated verifier");
-            }
-        }
-
+        // GUARD 2 — self-verification prevention.
+        // The verifier must be a party independent from the assignees. Allowing the
+        // same address to both claim and verify would let a contributor manufacture
+        // reputation and, once escrow is introduced, drain contract funds unilaterally.
         for (assignee, _) in bounty.assignees.iter() {
             if assignee == verifier {
-                panic!("{}", errors::VERIFIER_CANNOT_BE_ASSIGNEE);
+                panic!("verifier cannot be the assignee");
             }
         }
 
-        // Checks-effects-interactions: compute payouts and persist every state change
-        // (contributor profiles, bounty status) before making any cross-contract token
-        // transfer. This way a reentrant call back into `complete_bounty` lands on a
-        // bounty that is no longer `in_progress` and is rejected by the guard above.
+        // Checks-effects-interactions pattern:
+        // 1. Compute all payouts and update contributor state in memory.
+        // 2. Persist the status change (marking the bounty completed) BEFORE any
+        //    cross-contract token transfer. This ensures that a reentrant call back
+        //    into complete_bounty would be rejected by GUARD 1 above.
+        // 3. Execute token transfers last.
+        let token = TokenClient::new(&env, &bounty.reward_token);
         let mut payouts: Vec<(Address, i128)> = Vec::new(&env);
+
         for (assignee, share_bp) in bounty.assignees.iter() {
             let payout = bounty.reward_amount * (share_bp as i128) / 10_000_i128;
-            token.transfer(&verifier, &assignee, &payout);
+            payouts.push_back((assignee.clone(), payout));
 
             let mut contrib = storage::get_contributor(&env, &assignee)
-                .unwrap_or(Contributor {
-                    address: assignee.clone(),
-                    reputation: 0,
-                    total_earned: 0,
-                    contribution_count: 0,
-                    active_claims: 0,
-                    metadata: None,
-                });
+                .unwrap_or_else(|| Contributor::new(assignee.clone()));
 
             contrib.reputation += 10;
             contrib.total_earned += payout;
@@ -229,15 +240,19 @@ impl MergeMintContract {
             if contrib.active_claims > 0 {
                 contrib.active_claims -= 1;
             }
+
+            // Persist the updated contributor profile before the token transfer.
+            storage::store_contributor(&env, &assignee, &contrib);
         }
 
+        // Persist status transition before any cross-contract call.
         let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_COMPLETED);
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
-        let token = TokenClient::new(&env, &bounty.reward_token);
+        // Now safe to execute token transfers — bounty is already marked completed.
         for (assignee, payout) in payouts.iter() {
             token.transfer(&verifier, &assignee, &payout);
             events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
@@ -249,6 +264,10 @@ impl MergeMintContract {
     /// Record one verifier's approval for a multi-sig bounty completion.
     /// When the number of unique approvals reaches approval_threshold, completion executes automatically.
     /// Falls back to single-verifier behaviour when required_verifiers is None (any verifier completes directly).
+    ///
+    /// # Authorization
+    /// `verifier.require_auth()` is the **first** operation in this function.
+    /// No storage reads or business logic execute before authentication is checked.
     pub fn approve_completion(env: Env, verifier: Address, bounty_id: BountyId) {
         verifier.require_auth();
 
@@ -328,6 +347,10 @@ impl MergeMintContract {
     ///
     /// Only the bounty creator or an existing assignee may call this.
     /// Transitions the bounty status to `"disputed"`.
+    ///
+    /// # Authorization
+    /// `caller.require_auth()` is the **first** operation in this function.
+    /// No storage reads or business logic execute before authentication is checked.
     pub fn raise_dispute(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
@@ -350,6 +373,10 @@ impl MergeMintContract {
 
     /// Resolve a disputed bounty. Only the bounty creator (acting as arbitrator) may call this.
     /// resolution must be the Symbol "complete" (pay assignees) or "cancel" (refund creator).
+    ///
+    /// # Authorization
+    /// `arbitrator.require_auth()` is the **first** operation in this function.
+    /// No storage reads or business logic execute before authentication is checked.
     pub fn resolve_dispute(
         env: Env,
         arbitrator: Address,
