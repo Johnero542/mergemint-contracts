@@ -1,4 +1,2 @@
 target/
-test_snapshots/
-.env
-*.wasm
+somzilla.md
