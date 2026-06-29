@@ -135,6 +135,11 @@ impl MergeMintContract {
 
     /// Complete a bounty: distribute `reward_amount` proportionally across all assignees
     /// according to their basis-point shares (shares sum to 10 000).
+    ///
+    /// Security: `require_auth()` is the first executable statement. The bounty must be
+    /// `"in_progress"` (guards against double-completion) and the verifier must not be
+    /// one of the assignees (guards against self-verification) — both checks happen
+    /// before any token transfer.
     pub fn complete_bounty(env: Env, verifier: Address, bounty_id: BytesN<32>) {
         verifier.require_auth();
 
@@ -143,8 +148,18 @@ impl MergeMintContract {
             None => panic!("{}", errors::BOUNTY_NOT_FOUND),
         };
 
+        if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
+            panic!("{}", errors::BOUNTY_NOT_IN_PROGRESS);
+        }
+
         if bounty.assignees.is_empty() {
             panic!("{}", errors::BOUNTY_HAS_NO_ASSIGNEE);
+        }
+
+        for (assignee, _) in bounty.assignees.iter() {
+            if assignee == verifier {
+                panic!("{}", errors::VERIFIER_CANNOT_BE_ASSIGNEE);
+            }
         }
 
         let token = TokenClient::new(&env, &bounty.reward_token);
@@ -236,8 +251,10 @@ impl MergeMintContract {
             panic!("{}", errors::BOUNTY_NOT_OPEN);
         }
 
+        let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
         // Note: Escrow refund will go here once escrow is implemented.
         events::emit_bounty_cancelled(&env, &bounty_id, &caller);
@@ -263,8 +280,10 @@ impl MergeMintContract {
             panic!("{}", errors::BOUNTY_NOT_OPEN);
         }
 
+        let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
         // Escrow refund goes here once escrow is implemented.
         events::emit_bounty_expired(&env, &bounty_id, &bounty.creator);
