@@ -30,6 +30,10 @@ impl MergeMintContract {
         min_reputation: u32,
         deadline: Option<u32>,
     ) -> BytesN<32> {
+        if reward_amount <= 0 {
+            panic!("{}", errors::REWARD_MUST_BE_POSITIVE);
+        }
+
         creator.require_auth();
 
         let count = storage::get_bounty_count(&env);
@@ -143,15 +147,21 @@ impl MergeMintContract {
             None => panic!("{}", errors::BOUNTY_NOT_FOUND),
         };
 
+        if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
+            panic!("{}", errors::BOUNTY_NOT_IN_PROGRESS);
+        }
+
         if bounty.assignees.is_empty() {
             panic!("{}", errors::BOUNTY_HAS_NO_ASSIGNEE);
         }
 
-        let token = TokenClient::new(&env, &bounty.reward_token);
-
+        // Checks-effects-interactions: compute payouts and persist every state change
+        // (contributor profiles, bounty status) before making any cross-contract token
+        // transfer. This way a reentrant call back into `complete_bounty` lands on a
+        // bounty that is no longer `in_progress` and is rejected by the guard above.
+        let mut payouts: Vec<(Address, i128)> = Vec::new(&env);
         for (assignee, share_bp) in bounty.assignees.iter() {
             let payout = (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
-            token.transfer(&verifier, &assignee, &payout);
 
             let mut contrib = storage::get_contributor(&env, &assignee)
                 .unwrap_or(Contributor {
@@ -171,7 +181,7 @@ impl MergeMintContract {
             }
 
             storage::store_contributor(&env, &assignee, &contrib);
-            events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+            payouts.push_back((assignee.clone(), payout));
         }
 
         // Use the first assignee as the primary for the completion event (backward compat).
@@ -181,6 +191,12 @@ impl MergeMintContract {
         bounty.status = Symbol::new(&env, STATUS_COMPLETED);
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        for (assignee, payout) in payouts.iter() {
+            token.transfer(&verifier, &assignee, &payout);
+            events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+        }
 
         events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
     }
@@ -236,8 +252,10 @@ impl MergeMintContract {
             panic!("{}", errors::BOUNTY_NOT_OPEN);
         }
 
+        let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
         // Note: Escrow refund will go here once escrow is implemented.
         events::emit_bounty_cancelled(&env, &bounty_id, &caller);
@@ -263,8 +281,10 @@ impl MergeMintContract {
             panic!("{}", errors::BOUNTY_NOT_OPEN);
         }
 
+        let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
         // Escrow refund goes here once escrow is implemented.
         events::emit_bounty_expired(&env, &bounty_id, &bounty.creator);
