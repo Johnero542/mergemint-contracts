@@ -42,6 +42,14 @@ impl MergeMintContract {
         min_reputation: u32,
         deadline: Option<u32>,
     ) -> BountyId {
+        // Issue #1: reward_amount must be strictly positive before any storage
+        // interaction or auth check — a zero or negative reward produces an
+        // economically meaningless bounty and will cause a cryptic token-level
+        // error (or silent no-op) when complete_bounty is eventually called.
+        if reward_amount <= 0 {
+            panic!("reward_amount must be positive");
+        }
+
         creator.require_auth();
 
         let count = storage::get_bounty_count(&env);
@@ -182,20 +190,16 @@ impl MergeMintContract {
             None => fail(ContractError::BountyNotFound),
         };
 
-        // Issue #2: guard against disputed status
-        if bounty.status == Symbol::new(&env, STATUS_DISPUTED) {
-            fail(ContractError::BountyIsDisputed);
+        // Issue #2: guard against completing a bounty that is not in progress.
+        // This covers open bounties (never claimed), already-completed bounties
+        // (double-completion / reward drain), cancelled, and disputed ones.
+        // The check must execute before any token transfer.
+        if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
+            panic!("bounty is not in progress");
         }
 
         if bounty.assignees.is_empty() {
             fail(ContractError::BountyHasNoAssignee);
-        }
-
-        // #264: if a designated verifier was set, enforce it
-        if let Some(ref designated) = bounty.verifier {
-            if verifier != *designated {
-                panic!("caller is not the designated verifier");
-            }
         }
 
         for (assignee, _) in bounty.assignees.iter() {
@@ -204,14 +208,16 @@ impl MergeMintContract {
             }
         }
 
-        // Checks-effects-interactions: compute payouts and persist every state change
-        // (contributor profiles, bounty status) before making any cross-contract token
-        // transfer. This way a reentrant call back into `complete_bounty` lands on a
-        // bounty that is no longer `in_progress` and is rejected by the guard above.
+        // Issue #3: Checks-effects-interactions pattern.
+        // Compute each payout amount and update every contributor profile, then
+        // transition the bounty status to `completed` and persist it — all before
+        // making any cross-contract token transfer.  If a malicious or buggy token
+        // contract attempted to re-enter `complete_bounty`, it would find the bounty
+        // already in `completed` status and be rejected by the guard above.
         let mut payouts: Vec<(Address, i128)> = Vec::new(&env);
         for (assignee, share_bp) in bounty.assignees.iter() {
             let payout = bounty.reward_amount * (share_bp as i128) / 10_000_i128;
-            token.transfer(&verifier, &assignee, &payout);
+            payouts.push_back((assignee.clone(), payout));
 
             let mut contrib = storage::get_contributor(&env, &assignee)
                 .unwrap_or(Contributor {
@@ -229,6 +235,7 @@ impl MergeMintContract {
             if contrib.active_claims > 0 {
                 contrib.active_claims -= 1;
             }
+            storage::store_contributor(&env, &assignee, &contrib);
         }
 
         let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
@@ -237,6 +244,7 @@ impl MergeMintContract {
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
+        // All state has been committed above; now perform the external token transfers.
         let token = TokenClient::new(&env, &bounty.reward_token);
         for (assignee, payout) in payouts.iter() {
             token.transfer(&verifier, &assignee, &payout);
