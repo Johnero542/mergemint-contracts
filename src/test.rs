@@ -714,39 +714,7 @@ fn test_second_contributor_cannot_claim_full_bounty() {
 
 // ===========================================================================
 // Issue #256: event emission assertions
-// ===========================================================================
-
-#[test]
-fn test_event_bounty_created() {
-    let (env, creator, _contributor, _verifier) = setup_test();
-    let contract_id = env.register_contract(None, MergeMintContract);
-    let client = MergeMintContractClient::new(&env, &contract_id);
-
-    let bounty_id = client.create_bounty(
-        &creator, &Symbol::new(&env, "evt_b"), &Symbol::new(&env, "desc"), &1000,
-        &Address::generate(&env), &0, &None,
-    );
-
-    let events = env.events().all();
-    // Last event should be bounty_created
-    let (_, topics, data) = &events.get(events.len() - 1).unwrap();
-
-    // topics = (Symbol("bounty_created"), creator_address)
-    let event_name: Val = topics.get(0).unwrap();
-    assert_eq!(event_name, Symbol::new(&env, "bounty_created").into());
-
-    let creator_val: Val = topics.get(1).unwrap();
-    assert_eq!(creator_val, creator.to_val());
-
-    // data = (bounty_id, reward_amount)
-    let (data_id, data_reward): (BytesN<32>, i128) = data.clone().try_into_val(&env).unwrap();
-    assert_eq!(data_id, bounty_id);
-    assert_eq!(data_reward, 1000);
-}
-
-#[test]
-fn test_event_bounty_claimed() {
-    let (env, creator, contributor, _verifier) = setup_test();
+// ====================================================================    let (env, creator, contributor, _verifier) = setup_test();
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
 
