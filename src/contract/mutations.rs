@@ -219,8 +219,11 @@ impl MergeMintContract {
             }
         }
 
-        let token = TokenClient::new(&env, &bounty.reward_token);
-
+        // Checks-effects-interactions: compute payouts and persist every state change
+        // (contributor profiles, bounty status) before making any cross-contract token
+        // transfer. This way a reentrant call back into `complete_bounty` lands on a
+        // bounty that is no longer `in_progress` and is rejected by the guard above.
+        let mut payouts: Vec<(Address, i128)> = Vec::new(&env);
         for (assignee, share_bp) in bounty.assignees.iter() {
             let payout = bounty.reward_amount * (share_bp as i128) / 10_000_i128;
             token.transfer(&verifier, &assignee, &payout);
@@ -248,6 +251,12 @@ impl MergeMintContract {
         bounty.status = Symbol::new(&env, STATUS_COMPLETED);
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        for (assignee, payout) in payouts.iter() {
+            token.transfer(&verifier, &assignee, &payout);
+            events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+        }
 
         events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
     }

@@ -136,7 +136,7 @@ fn test_bounty_count() {
 
 #[test]
 fn test_complete_bounty_updates_contributor() {
-    let (env, creator, contributor, _verifier) = setup_test();
+    let (env, creator, contributor, verifier) = setup_test();
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
 
@@ -159,6 +159,7 @@ fn test_complete_bounty_updates_contributor() {
     client.claim_bounty(&contributor, &bounty_id);
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "completed"));
     let (assignee_addr, _) = bounty.assignees.get(0).unwrap();
     assert_eq!(assignee_addr, contributor);
 }
@@ -176,6 +177,7 @@ fn test_complete_bounty_no_assignee_panics() {
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
     assert!(bounty.assignees.is_empty());
+    assert_eq!(bounty.status, Symbol::new(&env, "open"));
     client.complete_bounty(&verifier, &bounty_id);
 }
 
@@ -294,6 +296,19 @@ fn test_second_claim_rejected_while_active() {
     client.cancel_bounty(&creator, &cancelled_bounty_id);
     assert_eq!(client.get_bounties_by_status(&open_status).len(), 0);
     assert_eq!(client.get_bounties_by_status(&cancelled_status).len(), 1);
+
+    // Second claim by the same contributor on a fresh bounty must be rejected
+    // while their first claim is still active.
+    let second_bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "second_bounty"),
+        &Symbol::new(&env, "desc"),
+        &500,
+        &reward_token,
+        &0,
+        &None,
+    );
+    client.claim_bounty(&contributor, &second_bounty_id);
 }
 
 #[test]
@@ -445,4 +460,4 @@ fn test_status_index_moves_on_cancel() {
 
 // ====================================================================}
 
-// ===============================================
+// ========================================
