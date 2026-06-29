@@ -2,16 +2,29 @@
 
 ## Development Workflow
 
+A `Makefile` at the repository root provides shortcuts for all common tasks:
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the WASM contract |
+| `make test` | Run the full test suite |
+| `make lint` | Run Clippy (warnings as errors) and check formatting |
+| `make fmt` | Auto-format source files with rustfmt |
+| `make deploy` | Deploy the contract via `scripts/deploy.sh` |
+| `make clean` | Remove build artifacts |
+
 ### Building
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown
+make build
+# or: cargo build --release --target wasm32-unknown-unknown
 ```
 
 ### Testing
 
 ```bash
-cargo test
+make test
+# or: cargo test
 ```
 
 All tests must pass before submitting a PR.
