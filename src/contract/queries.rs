@@ -1,0 +1,31 @@
+use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
+
+use crate::storage;
+use crate::types::{Bounty, BountyId, BountyMeta, Contributor};
+
+#[contractimpl]
+impl MergeMintContract {
+    pub fn get_bounty(env: Env, bounty_id: BountyId) -> Option<Bounty> {
+        storage::get_bounty(&env, &bounty_id)
+    }
+
+    pub fn get_bounty_meta(env: Env, bounty_id: BountyId) -> Option<BountyMeta> {
+        storage::get_bounty_meta(&env, &bounty_id)
+    }
+
+    pub fn get_contributor(env: Env, address: Address) -> Option<Contributor> {
+        storage::get_contributor(&env, &address)
+    }
+
+    pub fn get_bounty_count(env: Env) -> u64 {
+        storage::get_bounty_count(&env)
+    }
+
+    pub fn get_bounties_by_status(env: Env, status: Symbol) -> Vec<BountyId> {
+        storage::get_bounties_by_status(&env, &status)
+    }
+
+    pub fn get_open_bounties(env: Env) -> Vec<BountyId> {
+        storage::get_open_bounties(&env)
+    }
+}
