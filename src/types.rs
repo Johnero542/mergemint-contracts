@@ -32,7 +32,7 @@ pub enum DataKey {
     ContributorBounties(Address),
     StatusIndex(Symbol),
     OpenBounties,
-    Approvals(BytesN<32>),
+    Approvals(BountyId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
