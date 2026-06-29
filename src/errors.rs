@@ -35,7 +35,7 @@ pub const fn message(e: ContractError) -> &'static str {
         ContractError::BountyNotOpen => "bounty not open",
         ContractError::BountyNotInProgress => "bounty not in progress",
         ContractError::BountyHasNoAssignee => "bounty has no assignee",
-        ContractError::RewardMustBePositive => "reward must be positive",
+        ContractError::RewardMustBePositive => "reward_amount must be positive",
         ContractError::NotBountyCreator => "not bounty creator",
         ContractError::VerifierCannotBeAssignee => "verifier cannot be assignee",
         ContractError::CreatorCannotClaim => "creator cannot claim",
@@ -56,7 +56,7 @@ pub const BOUNTY_ALREADY_ASSIGNED: &str = "bounty already assigned";
 pub const BOUNTY_NOT_OPEN: &str = "bounty not open";
 pub const BOUNTY_NOT_IN_PROGRESS: &str = "bounty is not in progress";
 pub const BOUNTY_HAS_NO_ASSIGNEE: &str = "bounty has no assignee";
-pub const REWARD_MUST_BE_POSITIVE: &str = "reward must be positive";
+pub const REWARD_MUST_BE_POSITIVE: &str = "reward_amount must be positive";
 pub const NOT_BOUNTY_CREATOR: &str = "not the bounty creator";
 pub const VERIFIER_CANNOT_BE_ASSIGNEE: &str = "verifier cannot be assignee";
 pub const CREATOR_CANNOT_CLAIM: &str = "creator cannot claim";

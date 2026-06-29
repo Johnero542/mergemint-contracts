@@ -1,5 +1,5 @@
-// queries.rs is include!()-ed into contract/mod.rs, which already provides all
-// necessary imports. Do not add any `use` statements here.
+// Queries are included directly into mod.rs via include!(), so all imports
+// from mod.rs are already in scope — no use statements needed here.
 
 #[contractimpl]
 impl MergeMintContract {

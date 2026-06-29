@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use soroban_sdk::{Address, Env, Symbol};
+use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 use crate::types::BountyId;
 
