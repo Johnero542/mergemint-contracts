@@ -1,4 +1,4 @@
-# MergeMint Contracts
+# MergeMint Contracts .....
 
 Soroban smart contracts powering the on-chain layer of MergeMint — an open-source contribution reward platform. These contracts manage the full bounty lifecycle on Stellar: creation, claiming, completion with automatic token reward distribution, and contributor reputation tracking.
 

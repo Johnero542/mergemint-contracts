@@ -54,7 +54,11 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  "vec": [
+                    {
+                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    }
+                  ]
                 }
               ]
             }
@@ -151,7 +155,11 @@
                   "symbol": "Bounty"
                 },
                 {
-                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  "vec": [
+                    {
+                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    }
+                  ]
                 }
               ]
             },
@@ -171,13 +179,25 @@
                       "symbol": "Bounty"
                     },
                     {
-                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      "vec": [
+                        {
+                          "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                      ]
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
                   "map": [
+                    {
+                      "key": {
+                        "symbol": "approval_threshold"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
                     {
                       "key": {
                         "symbol": "assignees"
@@ -229,6 +249,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_verifiers"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "reward_amount"
                       },
                       "val": {
@@ -257,7 +283,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -296,7 +322,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -309,7 +335,11 @@
                   "symbol": "BountyMeta"
                 },
                 {
-                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  "vec": [
+                    {
+                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    }
+                  ]
                 }
               ]
             },
@@ -329,7 +359,11 @@
                       "symbol": "BountyMeta"
                     },
                     {
-                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      "vec": [
+                        {
+                          "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                      ]
                     }
                   ]
                 },
@@ -450,6 +484,59 @@
             },
             "ext": "v0"
           },
+          6307200
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ContributorBounties"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ContributorBounties"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "vec": [
+                        {
+                          "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
           4095
         ]
       ],
@@ -489,7 +576,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -530,7 +617,11 @@
                 "val": {
                   "vec": [
                     {
-                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      "vec": [
+                        {
+                          "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                      ]
                     }
                   ]
                 }
@@ -538,7 +629,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -583,7 +674,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
