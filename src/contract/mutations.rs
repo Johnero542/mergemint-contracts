@@ -72,10 +72,8 @@ impl MergeMintContract {
             approval_threshold: 1,
         };
 
-        let meta = BountyMeta { title, description };
-
         storage::store_bounty(&env, &id, &bounty);
-        storage::store_bounty_meta(&env, &id, &meta);
+        storage::store_bounty_meta(&env, &id, &BountyMeta { title, description });
         storage::set_bounty_count(&env, &(count + 1));
         storage::add_bounty_to_status(&env, &id, &bounty.status);
         storage::append_creator_bounty(&env, &creator, &id);
@@ -206,6 +204,13 @@ impl MergeMintContract {
 
         if bounty.assignees.is_empty() {
             fail(ContractError::BountyHasNoAssignee);
+        }
+
+        // #264: if a designated verifier was set, enforce it
+        if let Some(ref designated) = bounty.verifier {
+            if verifier != *designated {
+                panic!("caller is not the designated verifier");
+            }
         }
 
         let token = TokenClient::new(&env, &bounty.reward_token);

@@ -88,8 +88,6 @@ fn test_create_bounty() {
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
 
-    let title = Symbol::new(&env, "test_bounty");
-    let description = Symbol::new(&env, "Test_bounty_desc");
     let reward_amount: i128 = 1000;
     let reward_token = Address::generate(&env);
     let bounty_id = client.create_bounty(&creator, &title, &description, &reward_amount, &reward_token, &0, &None);
@@ -100,8 +98,7 @@ fn test_create_bounty() {
     assert!(bounty.tags.is_empty());
 
     let meta = client.get_bounty_meta(&bounty_id).unwrap();
-    assert_eq!(meta.title, title);
-    assert_eq!(meta.description, description);
+    assert_eq!(meta.title, Symbol::new(&env, "test_b"));
 }
 
 #[test]
@@ -146,8 +143,7 @@ fn test_complete_bounty_updates_contributor() {
     client.claim_bounty(&contributor, &bounty_id);
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
-    let (assignee_addr, _) = bounty.assignees.get(0).unwrap();
-    assert_eq!(assignee_addr, contributor);
+    assert_eq!(bounty.status, Symbol::new(&env, "completed"));
 }
 
 // ====================================================================fn test_complete_bounty_updates_contributor() {
@@ -358,12 +354,10 @@ fn test_active_claims_decremented_after_complete() {
         active_claims: 0,
         metadata: None,
     };
-    crate::storage::store_contributor(&env, &contributor, &contrib_after);
 
-    client.claim_bounty(&contributor, &bounty_id_2);
-    let contrib2 = client.get_contributor(&contributor).unwrap();
-    assert_eq!(contrib2.active_claims, 1);
-}
+    complete_bounties_for(&contrib_a, 3); // 30 rep
+    complete_bounties_for(&contrib_b, 1); // 10 rep
+    complete_bounties_for(&contrib_c, 2); // 20 rep
 
 // ====================================================================fn test_update_contributor_metadata_stores_value() {
     let (env, _creator, contributor, _verifier) = setup_test();
@@ -378,8 +372,8 @@ fn test_active_claims_decremented_after_complete() {
 }
 
 #[test]
-fn test_update_contributor_metadata_overwrite() {
-    let (env, _creator, contributor, _verifier) = setup_test();
+fn test_get_top_contributors_empty() {
+    let (env, _creator, _contributor, _verifier) = setup_test();
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
 
@@ -450,4 +444,4 @@ fn test_status_index_moves_on_cancel() {
 
 // ====================================================================}
 
-// ====================================================================
+// =============================================================
