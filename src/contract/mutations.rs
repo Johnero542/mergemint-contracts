@@ -78,6 +78,7 @@ impl MergeMintContract {
         storage::store_bounty_meta(&env, &id, &meta);
         storage::set_bounty_count(&env, &(count + 1));
         storage::add_bounty_to_status(&env, &id, &bounty.status);
+        storage::append_creator_bounty(&env, &creator, &id);
 
         let mut open = storage::get_open_bounties(&env);
         open.push_back(id.clone());
