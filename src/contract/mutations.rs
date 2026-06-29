@@ -1,6 +1,6 @@
 use soroban_sdk::{contractimpl, token::TokenClient, Address, BytesN, Env, Symbol, Vec};
 
-use crate::errors;
+use crate::errors::{fail, ContractError};
 use crate::events;
 use crate::storage;
 use crate::types::{Bounty, BountyId, BountyMeta, Contributor};
@@ -51,6 +51,11 @@ impl MergeMintContract {
     ) -> BountyId {
         creator.require_auth();
 
+        // Issue #4: validate tag count
+        if tags.len() > 5 {
+            fail(ContractError::TooManyTags);
+        }
+
         let count = storage::get_bounty_count(&env);
         let id = generate_bounty_id(&env, count);
 
@@ -77,6 +82,9 @@ impl MergeMintContract {
         let mut open = storage::get_open_bounties(&env);
         open.push_back(id.clone());
         storage::set_open_bounties(&env, &open);
+
+        // Issue #3: append to creator index
+        storage::append_creator_bounty(&env, &creator, &id);
 
         events::emit_bounty_created(&env, &id, &creator, &reward_amount);
         id
@@ -107,18 +115,16 @@ impl MergeMintContract {
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
             Some(b) => b,
-            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+            None => fail(ContractError::BountyNotFound),
         };
 
-        // Reject if already at capacity.
         if bounty.assignees.len() >= bounty.max_assignees {
-            panic!("{}", errors::BOUNTY_ALREADY_ASSIGNED);
+            fail(ContractError::BountyAlreadyAssigned);
         }
 
-        // Reject if the contributor is already listed.
         for (addr, _) in bounty.assignees.iter() {
             if addr == contributor {
-                panic!("{}", errors::BOUNTY_ALREADY_ASSIGNED);
+                fail(ContractError::BountyAlreadyAssigned);
             }
         }
 
@@ -133,13 +139,13 @@ impl MergeMintContract {
             });
 
         if contrib.active_claims >= 1 {
-            panic!("{}", errors::CONTRIBUTOR_HAS_ACTIVE_CLAIM);
+            fail(ContractError::ContributorHasActiveClaim);
         }
 
         // Deadline enforcement: reject claims once the deadline ledger sequence has passed.
         if let Some(deadline) = bounty.deadline {
             if env.ledger().sequence() > deadline {
-                panic!("{}", errors::BOUNTY_DEADLINE_PASSED);
+                fail(ContractError::BountyDeadlinePassed);
             }
         }
 
@@ -195,17 +201,22 @@ impl MergeMintContract {
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
             Some(b) => b,
-            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+            None => fail(ContractError::BountyNotFound),
         };
 
+        // Issue #2: guard against disputed status
+        if bounty.status == Symbol::new(&env, STATUS_DISPUTED) {
+            fail(ContractError::BountyIsDisputed);
+        }
+
         if bounty.assignees.is_empty() {
-            panic!("{}", errors::BOUNTY_HAS_NO_ASSIGNEE);
+            fail(ContractError::BountyHasNoAssignee);
         }
 
         let token = TokenClient::new(&env, &bounty.reward_token);
 
         for (assignee, share_bp) in bounty.assignees.iter() {
-            let payout = (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
+            let payout = bounty.reward_amount * (share_bp as i128) / 10_000_i128;
             token.transfer(&verifier, &assignee, &payout);
 
             let mut contrib = storage::get_contributor(&env, &assignee)
@@ -324,11 +335,14 @@ impl MergeMintContract {
     pub fn raise_dispute(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
-        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => fail(ContractError::BountyNotFound),
+        };
 
         let is_assignee = bounty.assignees.iter().any(|(addr, _)| addr == caller);
         if caller != bounty.creator && !is_assignee {
-            panic!("only creator or assignee can raise dispute");
+            fail(ContractError::OnlyCreatorOrAssigneeCanDispute);
         }
 
         let previous_status = bounty.status.clone();
@@ -458,14 +472,17 @@ impl MergeMintContract {
     pub fn cancel_bounty(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
-        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => fail(ContractError::BountyNotFound),
+        };
 
         if caller != bounty.creator {
-            panic!("{}", errors::NOT_BOUNTY_CREATOR);
+            fail(ContractError::NotBountyCreator);
         }
 
         if bounty.status != Symbol::new(&env, STATUS_OPEN) {
-            panic!("{}", errors::BOUNTY_NOT_OPEN);
+            fail(ContractError::BountyNotOpen);
         }
 
         let previous_status = bounty.status.clone();
@@ -505,11 +522,11 @@ impl MergeMintContract {
         };
 
         if env.ledger().sequence() <= deadline {
-            panic!("{}", errors::DEADLINE_NOT_PASSED);
+            fail(ContractError::DeadlineNotPassed);
         }
 
         if bounty.status != Symbol::new(&env, STATUS_OPEN) {
-            panic!("{}", errors::BOUNTY_NOT_OPEN);
+            fail(ContractError::BountyNotOpen);
         }
 
         let previous_status = bounty.status.clone();
