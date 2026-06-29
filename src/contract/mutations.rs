@@ -229,7 +229,6 @@ impl MergeMintContract {
             events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
         }
 
-        // Use the first assignee as the primary for the completion event (backward compat).
         let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
 
         let previous_status = bounty.status.clone();
@@ -327,7 +326,6 @@ impl MergeMintContract {
 
         let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
 
-        // Allow creator or any assignee to raise a dispute.
         let is_assignee = bounty.assignees.iter().any(|(addr, _)| addr == caller);
         if caller != bounty.creator && !is_assignee {
             panic!("only creator or assignee can raise dispute");
@@ -470,10 +468,11 @@ impl MergeMintContract {
             panic!("{}", errors::BOUNTY_NOT_OPEN);
         }
 
+        let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
-        // Note: Escrow refund will go here once escrow is implemented.
         events::emit_bounty_cancelled(&env, &bounty_id, &caller);
     }
 
@@ -513,8 +512,10 @@ impl MergeMintContract {
             panic!("{}", errors::BOUNTY_NOT_OPEN);
         }
 
+        let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
         // Escrow refund goes here once escrow is implemented.
         events::emit_bounty_expired(&env, &bounty_id, &bounty.creator);
