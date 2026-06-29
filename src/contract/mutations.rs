@@ -128,15 +128,9 @@ impl MergeMintContract {
             }
         }
 
+        // #275: use Contributor::new for default construction
         let mut contrib = storage::get_contributor(&env, &contributor)
-            .unwrap_or(Contributor {
-                address: contributor.clone(),
-                reputation: 0,
-                total_earned: 0,
-                contribution_count: 0,
-                active_claims: 0,
-                metadata: None,
-            });
+            .unwrap_or_else(|| Contributor::new(contributor.clone()));
 
         if contrib.active_claims >= 1 {
             fail(ContractError::ContributorHasActiveClaim);
@@ -235,13 +229,9 @@ impl MergeMintContract {
             if contrib.active_claims > 0 {
                 contrib.active_claims -= 1;
             }
-
-            storage::store_contributor(&env, &assignee, &contrib);
-            events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
         }
 
         let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
-
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_COMPLETED);
         storage::store_bounty(&env, &bounty_id, &bounty);
@@ -439,15 +429,9 @@ impl MergeMintContract {
     pub fn update_contributor_metadata(env: Env, contributor: Address, metadata: Symbol) {
         contributor.require_auth();
 
+        // #275: use Contributor::new for default construction
         let mut contrib = storage::get_contributor(&env, &contributor)
-            .unwrap_or(Contributor {
-                address: contributor.clone(),
-                reputation: 0,
-                total_earned: 0,
-                contribution_count: 0,
-                active_claims: 0,
-                metadata: None,
-            });
+            .unwrap_or_else(|| Contributor::new(contributor.clone()));
 
         contrib.metadata = Some(metadata);
         storage::store_contributor(&env, &contributor, &contrib);

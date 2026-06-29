@@ -29,9 +29,18 @@ pub enum DataKey {
     Bounty(BountyId),
     BountyMeta(BountyId),
     Contributor(Address),
+    ContributorBounties(Address),
     StatusIndex(Symbol),
     OpenBounties,
     Approvals(BytesN<32>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct Milestone {
+    pub description: Symbol,
+    pub reward: i128,
+    pub completed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,4 +81,17 @@ pub struct Contributor {
     pub contribution_count: u32,
     pub active_claims: u32,
     pub metadata: Option<Symbol>,
+}
+
+impl Contributor {
+    pub fn new(address: Address) -> Self {
+        Self {
+            address,
+            reputation: 0,
+            total_earned: 0,
+            contribution_count: 0,
+            active_claims: 0,
+            metadata: None,
+        }
+    }
 }
