@@ -1,10 +1,3 @@
-use soroban_sdk::{contractimpl, token::TokenClient, Address, BytesN, Env, Symbol, Vec};
-
-use crate::errors::{fail, ContractError};
-use crate::events;
-use crate::storage;
-use crate::types::{Bounty, BountyId, BountyMeta, Contributor};
-
 const STATUS_OPEN: &str = "open";
 const STATUS_IN_PROGRESS: &str = "in_progress";
 const STATUS_COMPLETED: &str = "completed";
@@ -51,11 +44,6 @@ impl MergeMintContract {
     ) -> BountyId {
         creator.require_auth();
 
-        // Issue #4: validate tag count
-        if tags.len() > 5 {
-            fail(ContractError::TooManyTags);
-        }
-
         let count = storage::get_bounty_count(&env);
         let id = generate_bounty_id(&env, count);
 
@@ -81,9 +69,6 @@ impl MergeMintContract {
         let mut open = storage::get_open_bounties(&env);
         open.push_back(id.clone());
         storage::set_open_bounties(&env, &open);
-
-        // Issue #3: append to creator index
-        storage::append_creator_bounty(&env, &creator, &id);
 
         events::emit_bounty_created(&env, &id, &creator, &reward_amount);
         id

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use soroban_sdk::{Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{Address, Env, Symbol, Vec};
 
 use crate::types::{Bounty, BountyId, BountyMeta, Contributor, DataKey};
 
@@ -186,17 +186,17 @@ pub fn set_open_bounties(env: &Env, bounties: &Vec<BountyId>) {
 
 // ── Issue #3: Creator bounties index ─────────────────────────────────────────
 
-pub fn get_creator_bounties(env: &Env, creator: &Address) -> Vec<BytesN<32>> {
+pub fn get_creator_bounties(env: &Env, creator: &Address) -> Vec<BountyId> {
     env.storage()
         .persistent()
-        .get(&DataKey::CreatorBounties(creator.clone()))
+        .get(&DataKey::ContributorBounties(creator.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
 
-pub fn append_creator_bounty(env: &Env, creator: &Address, bounty_id: &BytesN<32>) {
+pub fn append_creator_bounty(env: &Env, creator: &Address, bounty_id: &BountyId) {
     let mut list = get_creator_bounties(env, creator);
     list.push_back(bounty_id.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::CreatorBounties(creator.clone()), &list);
+        .set(&DataKey::ContributorBounties(creator.clone()), &list);
 }
