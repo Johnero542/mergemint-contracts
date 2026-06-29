@@ -4,7 +4,7 @@
 use soroban_sdk::{
     testutils::{Address as _, Budget as _, Ledger as _},
     token::StellarAssetClient,
-    Address, BytesN, Env, Symbol,
+    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Val, Vec,
 };
 
 use crate::contract::MergeMintContract;
@@ -710,4 +710,193 @@ fn test_second_contributor_cannot_claim_full_bounty() {
     // A different contributor tries to claim a full single-slot bounty — should panic.
     let contributor2 = Address::generate(&env);
     client.claim_bounty(&contributor2, &bounty_id);
+}
+
+// ===========================================================================
+// Issue #256: event emission assertions
+// ===========================================================================
+
+#[test]
+fn test_event_bounty_created() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator, &Symbol::new(&env, "evt_b"), &Symbol::new(&env, "desc"), &1000,
+        &Address::generate(&env), &0, &None,
+    );
+
+    let events = env.events().all();
+    // Last event should be bounty_created
+    let (_, topics, data) = &events.get(events.len() - 1).unwrap();
+
+    // topics = (Symbol("bounty_created"), creator_address)
+    let event_name: Val = topics.get(0).unwrap();
+    assert_eq!(event_name, Symbol::new(&env, "bounty_created").into());
+
+    let creator_val: Val = topics.get(1).unwrap();
+    assert_eq!(creator_val, creator.to_val());
+
+    // data = (bounty_id, reward_amount)
+    let (data_id, data_reward): (BytesN<32>, i128) = data.clone().try_into_val(&env).unwrap();
+    assert_eq!(data_id, bounty_id);
+    assert_eq!(data_reward, 1000);
+}
+
+#[test]
+fn test_event_bounty_claimed() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator, &Symbol::new(&env, "evt_cl"), &Symbol::new(&env, "desc"), &1000,
+        &Address::generate(&env), &0, &None,
+    );
+    // Clear events to isolate the claim event
+    let _ = env.events().all();
+    client.claim_bounty(&contributor, &bounty_id);
+
+    let events = env.events().all();
+    let (_, topics, data) = &events.get(events.len() - 1).unwrap();
+
+    // topics = (Symbol("bounty_claimed"), contributor_address)
+    let event_name: Val = topics.get(0).unwrap();
+    assert_eq!(event_name, Symbol::new(&env, "bounty_claimed").into());
+
+    let contributor_val: Val = topics.get(1).unwrap();
+    assert_eq!(contributor_val, contributor.to_val());
+
+    // data = bounty_id
+    let data_id: BytesN<32> = data.clone().try_into_val(&env).unwrap();
+    assert_eq!(data_id, bounty_id);
+}
+
+#[test]
+fn test_event_bounty_completed() {
+    let (env, creator, contributor, verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let reward_token = env.register_stellar_asset_contract(token_admin.clone());
+    let token_client = StellarAssetClient::new(&env, &reward_token);
+    token_client.mint(&token_admin, &1000);
+    token_client.transfer(&token_admin, &verifier, &1000);
+
+    let bounty_id = client.create_bounty(
+        &creator, &Symbol::new(&env, "evt_cp"), &Symbol::new(&env, "desc"), &1000,
+        &reward_token, &0, &None,
+    );
+    client.claim_bounty(&contributor, &bounty_id);
+    let _ = env.events().all();
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let events = env.events().all();
+    let (_, topics, data) = &events.get(events.len() - 1).unwrap();
+
+    let event_name: Val = topics.get(0).unwrap();
+    assert_eq!(event_name, Symbol::new(&env, "bounty_completed").into());
+
+    let assignee_val: Val = topics.get(1).unwrap();
+    assert_eq!(assignee_val, contributor.to_val());
+
+    let data_id: BytesN<32> = data.clone().try_into_val(&env).unwrap();
+    assert_eq!(data_id, bounty_id);
+}
+
+#[test]
+fn test_event_reward_paid() {
+    let (env, creator, contributor, verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let reward_token = env.register_stellar_asset_contract(token_admin.clone());
+    let token_client = StellarAssetClient::new(&env, &reward_token);
+    token_client.mint(&token_admin, &1000);
+    token_client.transfer(&token_admin, &verifier, &1000);
+
+    let bounty_id = client.create_bounty(
+        &creator, &Symbol::new(&env, "evt_rp"), &Symbol::new(&env, "desc"), &1000,
+        &reward_token, &0, &None,
+    );
+    client.claim_bounty(&contributor, &bounty_id);
+    let _ = env.events().all();
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let events = env.events().all();
+    let (_, topics, data) = &events.get(0).unwrap();
+
+    let event_name: Val = topics.get(0).unwrap();
+    assert_eq!(event_name, Symbol::new(&env, "reward_paid").into());
+
+    let assignee_val: Val = topics.get(1).unwrap();
+    assert_eq!(assignee_val, contributor.to_val());
+
+    let (data_id, data_reward): (BytesN<32>, i128) = data.clone().try_into_val(&env).unwrap();
+    assert_eq!(data_id, bounty_id);
+    assert_eq!(data_reward, 1000);
+}
+
+#[test]
+fn test_all_lifecycle_events() {
+    let (env, creator, contributor, verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let reward_token = env.register_stellar_asset_contract(token_admin.clone());
+    let token_client = StellarAssetClient::new(&env, &reward_token);
+    token_client.mint(&token_admin, &2000);
+    token_client.transfer(&token_admin, &verifier, &2000);
+
+    let reward_amount: i128 = 2000;
+    let bounty_id = client.create_bounty(
+        &creator, &Symbol::new(&env, "full_lifecycle"), &Symbol::new(&env, "desc"),
+        &reward_amount, &reward_token, &0, &None,
+    );
+    client.claim_bounty(&contributor, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let events = env.events().all();
+    let mut lifecycle_events: Vec<Symbol> = Vec::new(&env);
+    for event in events.iter() {
+        let (_addr, topics, _data) = event;
+        if topics.len() > 0 {
+            if let Ok(sym) = Symbol::try_from_val(&env, &topics.get(0).unwrap()) {
+                let name: &str = &sym.to_string();
+                if name == "bounty_created"
+                    || name == "bounty_claimed"
+                    || name == "bounty_completed"
+                    || name == "reward_paid"
+                {
+                    lifecycle_events.push_back(sym);
+                }
+            }
+        }
+    }
+
+    assert_eq!(lifecycle_events.len(), 4, "expected exactly 4 lifecycle events");
+    assert_eq!(
+        lifecycle_events.get(0).unwrap(),
+        Symbol::new(&env, "bounty_created"),
+        "first event should be bounty_created"
+    );
+    assert_eq!(
+        lifecycle_events.get(1).unwrap(),
+        Symbol::new(&env, "bounty_claimed"),
+        "second event should be bounty_claimed"
+    );
+    assert_eq!(
+        lifecycle_events.get(2).unwrap(),
+        Symbol::new(&env, "reward_paid"),
+        "third event should be reward_paid"
+    );
+    assert_eq!(
+        lifecycle_events.get(3).unwrap(),
+        Symbol::new(&env, "bounty_completed"),
+        "fourth event should be bounty_completed"
+    );
 }
