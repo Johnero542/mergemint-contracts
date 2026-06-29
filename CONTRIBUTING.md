@@ -233,6 +233,24 @@ cargo test
 
 If all tests pass without modification, the snapshots are valid against the current schema.
 
+## Changelog
+
+[CHANGELOG.md](./CHANGELOG.md) records the history of the public contract
+interface. It follows the [Keep a Changelog](https://keepachangelog.com) format.
+
+**Any PR that changes the public interface must update `CHANGELOG.md`.**
+This includes:
+
+- Adding, removing, or renaming a contract function
+- Changing function parameter types or order
+- Adding, removing, or reordering fields in `Bounty`, `BountyMeta`,
+  `Contributor`, or `DataKey`
+- Adding or removing emitted events, or changing their payloads
+
+Add your entry under the `[Unreleased]` section at the top of the file using
+one of the standard categories: `Added`, `Changed`, `Deprecated`, `Removed`,
+`Fixed`, or `Security`.
+
 ## Code Style
 
 ---
