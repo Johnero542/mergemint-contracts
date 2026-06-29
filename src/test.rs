@@ -587,3 +587,129 @@ fn test_second_contributor_cannot_claim_full_bounty() {
     let contributor2 = Address::generate(&env);
     client.claim_bounty(&contributor2, &bounty_id);
 }
+
+// ===========================================================================
+// Issue1 (somzilla): verify all Contributor struct fields round-trip correctly
+// through persistent storage
+// ===========================================================================
+
+#[test]
+fn test_contributor_fields_roundtrip() {
+    let (env, creator, contributor, verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Verify contributor is None before any activity
+    assert!(client.get_contributor(&contributor).is_none());
+
+    // Complete a bounty with a known reward_amount
+    let reward_amount: i128 = 2500;
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "roundtrip"),
+        &Symbol::new(&env, "desc"),
+        &reward_amount,
+        &Address::generate(&env),
+        &0,
+    );
+    client.claim_bounty(&contributor, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    // Retrieve and assert all Contributor fields after one completion
+    let contributor_data = client.get_contributor(&contributor).unwrap();
+    assert_eq!(contributor_data.address, contributor);
+    assert_eq!(contributor_data.reputation, 10);
+    assert_eq!(contributor_data.total_earned, reward_amount);
+    assert_eq!(contributor_data.contribution_count, 1);
+    assert_eq!(contributor_data.active_claims, 0);
+    assert!(contributor_data.metadata.is_none());
+
+    // Run a second completion and assert cumulative state
+    let reward_amount2: i128 = 5000;
+    let bounty_id2 = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "roundtrip2"),
+        &Symbol::new(&env, "desc2"),
+        &reward_amount2,
+        &Address::generate(&env),
+        &0,
+    );
+    client.claim_bounty(&contributor, &bounty_id2);
+    client.complete_bounty(&verifier, &bounty_id2);
+
+    let contributor_data2 = client.get_contributor(&contributor).unwrap();
+    assert_eq!(contributor_data2.address, contributor);
+    assert_eq!(contributor_data2.reputation, 20);
+    assert_eq!(contributor_data2.total_earned, reward_amount + reward_amount2);
+    assert_eq!(contributor_data2.contribution_count, 2);
+    assert_eq!(contributor_data2.active_claims, 0);
+    assert!(contributor_data2.metadata.is_none());
+}
+
+// ===========================================================================
+// Issue2 (somzilla): verify all Bounty struct fields round-trip correctly
+// through persistent storage
+// ===========================================================================
+
+#[test]
+fn test_bounty_fields_roundtrip() {
+    let (env, creator, _contributor, verifier) = setup_test();
+    let contract_id = env.register_contract(None, MergeMintContract);
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let title = Symbol::new(&env, "full_bounty");
+    let description = Symbol::new(&env, "full_desc");
+    let reward_amount: i128 = 7777;
+    let reward_token = Address::generate(&env);
+
+    // Create a bounty with known, non-default values for every field
+    let bounty_id = client.create_bounty(
+        &creator,
+        &title,
+        &description,
+        &reward_amount,
+        &reward_token,
+        &0,
+    );
+
+    // Retrieve the bounty and assert every field before claim
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.creator, creator);
+    assert_eq!(bounty.reward_amount, reward_amount);
+    assert_eq!(bounty.reward_token, reward_token);
+    assert!(bounty.assignees.is_empty());
+    assert_eq!(bounty.max_assignees, 1);
+    assert_eq!(bounty.status, Symbol::new(&env, "open"));
+    assert_eq!(bounty.min_reputation, 0);
+    assert_eq!(bounty.deadline, None);
+
+    // Verify meta fields are stored and returned correctly
+    let meta = client.get_bounty_meta(&bounty_id).unwrap();
+    assert_eq!(meta.title, title);
+    assert_eq!(meta.description, description);
+
+    // Claim the bounty and verify assignee is populated and status changes
+    let contributor = Address::generate(&env);
+    client.claim_bounty(&contributor, &bounty_id);
+
+    let bounty_after_claim = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty_after_claim.assignees.len(), 1);
+    let (assignee_addr, share) = bounty_after_claim.assignees.get(0).unwrap();
+    assert_eq!(assignee_addr, contributor);
+    assert_eq!(share, 10_000u32);
+    assert_eq!(bounty_after_claim.status, Symbol::new(&env, "in_progress"));
+
+    // Complete the bounty and verify status changes to completed
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let bounty_after_complete = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty_after_complete.status, Symbol::new(&env, "completed"));
+
+    // All original fields remain intact after the lifecycle
+    assert_eq!(bounty_after_complete.creator, creator);
+    assert_eq!(bounty_after_complete.reward_amount, reward_amount);
+    assert_eq!(bounty_after_complete.reward_token, reward_token);
+    assert_eq!(bounty_after_complete.min_reputation, 0);
+    assert_eq!(bounty_after_complete.deadline, None);
+}
+
