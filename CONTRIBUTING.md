@@ -48,17 +48,29 @@ Verify with `stellar --version`. Used for building, deploying, and inspecting co
 
 ## Development Workflow
 
-### Clone the repository
+A `Makefile` at the repository root provides shortcuts for all common tasks:
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the WASM contract |
+| `make test` | Run the full test suite |
+| `make lint` | Run Clippy (warnings as errors) and check formatting |
+| `make fmt` | Auto-format source files with rustfmt |
+| `make deploy` | Deploy the contract via `scripts/deploy.sh` |
+| `make clean` | Remove build artifacts |
+
+### Building
 
 ```bash
-git clone https://github.com/your-org/mergemint-contracts.git
-cd mergemint-contracts
+make build
+# or: cargo build --release --target wasm32-unknown-unknown
 ```
 
 ### Run the test suite
 
 ```bash
-cargo test
+make test
+# or: cargo test
 ```
 
 All tests run against the Soroban in-process test environment — no live network required. The suite covers `create_bounty`, `claim_bounty`, `complete_bounty`, and the bounty counter.
@@ -136,6 +148,30 @@ Examples: `feat/claim-expiry`, `fix/double-claim-guard`, `docs/snapshot-guide`
 
 ---
 
+## Changelog
+
+Every pull request that changes the contract interface **must** include a `CHANGELOG.md` entry under the `[Unreleased]` section. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+A "contract interface change" includes:
+- Adding, removing, or renaming a public contract function
+- Changing the parameters or return type of a public function
+- Adding, removing, or reordering fields in `Bounty`, `Contributor`, `BountyMeta`, or `DataKey`
+- Changing the set of events emitted by any function
+
+Use the appropriate subsection (`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`) inside `[Unreleased]`. Example:
+
+```markdown
+## [Unreleased]
+
+### Added
+- `update_contributor_metadata` — lets contributors update their off-chain profile URI.
+
+### Changed
+- `Bounty` — added optional `deadline` field (ledger sequence number).
+```
+
+PRs that touch only tests, documentation, CI, or tooling do not require a changelog entry, but one is welcome.
+
 ## Test Snapshots
 
 ### What are snapshots?
@@ -144,32 +180,60 @@ Files under `test_snapshots/` capture the full Soroban ledger state produced by 
 
 ### When snapshots become stale
 
-You must regenerate snapshots whenever you touch a `#[contracttype]` definition — specifically if you:
+The current snapshots and the structs they cover:
 
-- Add, remove, or reorder a field in `Bounty`, `Contributor`, or `DataKey`
-- Change a field's type (e.g. `u32` → `u64`)
-- Rename a field
+| Snapshot file | Primary struct tested |
+|---|---|
+| `test_bounty_count.1.json` | `DataKey::BountyCount` |
+| `test_claim_bounty.1.json` | `Bounty`, `Contributor` |
+| `test_complete_bounty_updates_status.1.json` | `Bounty` status transitions |
+| `test_contributor_reputation.1.json` | `Contributor` |
+| `test_create_bounty.1.json` | `Bounty`, `DataKey` |
+| `test_status_index_tracks_bounty_lifecycle.1.json` | `DataKey::StatusIndex` |
+
+### How Snapshots Are Generated
+
+Soroban's test infrastructure writes snapshot files automatically when a test that uses `Env::default()` completes. Running `cargo test` with a clean `test_snapshots/` directory will regenerate all files. On subsequent runs the framework compares the live ledger state against the stored JSON; a mismatch fails the test.
+
+### When Snapshots Become Stale
+
+Snapshots must be regenerated if:
+- A field is added to `Bounty`, `Contributor`, or other `#[contracttype]` structs
+- A field is removed or reordered
+- A field type changes (e.g., `u32` → `u64`)
+- Field visibility or attributes change
+- A new `DataKey` variant is added
 
 If you are unsure whether your change affects storage layout, run `cargo test` and check whether any snapshot diffs appear.
 
-### Regenerating snapshots
+Delete the existing snapshots and rerun the test suite:
 
 ```bash
-cargo test -- --nocapture
+rm -f test_snapshots/test/*.json
+cargo test
 ```
 
-The Soroban test runner rewrites `test_snapshots/` in place when snapshots are stale. After regeneration:
+The test run will recreate all snapshot files from the current ledger state. Review the new JSON files with `git diff` before committing to confirm the changes are intentional.
+
+If you only want to regenerate a single snapshot, delete that file and run the specific test:
+
+```bash
+rm test_snapshots/test/test_create_bounty.1.json
+cargo test test_create_bounty
+```
 
 1. Review the diff with `git diff test_snapshots/` and confirm each change is intentional.
 2. Commit the updated snapshot files in the same commit as the struct change — never in a separate commit, because the snapshots and the code must stay in sync.
 
-### Verifying snapshots are current
+To ensure all snapshots are current and pass:
 
 ```bash
 cargo test
 ```
 
-If all tests pass, all snapshots are current.
+If all tests pass without modification, the snapshots are valid against the current schema.
+
+## Code Style
 
 ---
 
