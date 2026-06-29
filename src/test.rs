@@ -26,6 +26,7 @@ fn make_bounty(
     client: &MergeMintContractClient,
     env: &Env,
     creator: &Address,
+    token: &Address,
     tag: &str,
     deadline: Option<u32>,
 ) -> BountyId {
@@ -327,7 +328,7 @@ fn test_status_index_moves_on_cancel() {
 
 #[test]
 fn test_active_claims_decremented_after_complete() {
-    let (env, creator, contributor, verifier) = setup_test();
+    let (env, creator, contributor, _verifier) = setup_test();
     let contract_id = env.register_contract(None, MergeMintContract);
     let client = MergeMintContractClient::new(&env, &contract_id);
 
@@ -444,4 +445,4 @@ fn test_status_index_moves_on_cancel() {
 
 // ====================================================================}
 
-// ======================================================
+// ===============================================

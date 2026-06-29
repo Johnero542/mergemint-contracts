@@ -213,6 +213,12 @@ impl MergeMintContract {
             }
         }
 
+        for (assignee, _) in bounty.assignees.iter() {
+            if assignee == verifier {
+                panic!("{}", errors::VERIFIER_CANNOT_BE_ASSIGNEE);
+            }
+        }
+
         let token = TokenClient::new(&env, &bounty.reward_token);
 
         for (assignee, share_bp) in bounty.assignees.iter() {

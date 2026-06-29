@@ -54,7 +54,7 @@ pub const fn message(e: ContractError) -> &'static str {
 pub const BOUNTY_NOT_FOUND: &str = "bounty not found";
 pub const BOUNTY_ALREADY_ASSIGNED: &str = "bounty already assigned";
 pub const BOUNTY_NOT_OPEN: &str = "bounty not open";
-pub const BOUNTY_NOT_IN_PROGRESS: &str = "bounty not in progress";
+pub const BOUNTY_NOT_IN_PROGRESS: &str = "bounty is not in progress";
 pub const BOUNTY_HAS_NO_ASSIGNEE: &str = "bounty has no assignee";
 pub const REWARD_MUST_BE_POSITIVE: &str = "reward must be positive";
 pub const NOT_BOUNTY_CREATOR: &str = "not the bounty creator";
