@@ -1,2 +1,17 @@
+# Build output
 target/
+
+# Soroban test ledger snapshots — generated automatically, not hand-authored
+test_snapshots/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# Misc
 somzilla.md

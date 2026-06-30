@@ -26,4 +26,13 @@ impl MergeMintContract {
     pub fn get_open_bounties(env: Env) -> Vec<BountyId> {
         storage::get_open_bounties(&env)
     }
+
+    /// Return all bounty IDs created by a specific creator address.
+    ///
+    /// The list is maintained in `DataKey::ContributorBounties(creator)` and
+    /// appended to on each `create_bounty` call. Returns an empty `Vec` if the
+    /// address has never created a bounty.
+    pub fn get_bounties_by_creator(env: Env, creator: Address) -> Vec<BountyId> {
+        storage::get_creator_bounties(&env, &creator)
+    }
 }
