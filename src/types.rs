@@ -62,6 +62,10 @@ pub struct Bounty {
     /// Number of approvals required before completion executes automatically.
     /// Only meaningful when required_verifiers is Some. A value of 0 is treated as 1.
     pub approval_threshold: u32,
+    /// Categorisation tags for the bounty (e.g. "bug", "docs", "feature").
+    /// At most 5 tags are allowed; `create_bounty` panics with `TooManyTags`
+    /// if the caller supplies more than 5.
+    pub tags: Vec<Symbol>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

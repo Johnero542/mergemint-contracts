@@ -26,12 +26,14 @@ impl MergeMintContract {
     /// * `reward_token` - Soroban token contract address used for payout.
     /// * `min_reputation` - Minimum reputation score required to claim (0 = no minimum).
     /// * `deadline` - Optional ledger sequence deadline after which the bounty cannot be claimed.
+    /// * `tags` - Categorisation tags (e.g. "bug", "docs"). At most 5 tags allowed.
     ///
     /// # Returns
     /// The newly generated `BountyId` that uniquely identifies this bounty.
     ///
     /// # Panics
     /// * If `reward_amount` is not strictly positive.
+    /// * If `tags.len() > 5` (`ContractError::TooManyTags`).
     ///
     /// # Authorization
     /// Requires auth from `creator`.
@@ -44,11 +46,17 @@ impl MergeMintContract {
         reward_token: Address,
         min_reputation: u32,
         deadline: Option<u32>,
+        tags: Vec<Symbol>,
     ) -> BountyId {
         // Validated first, ahead of auth and all storage interaction: a non-positive
         // reward is a malformed request regardless of who is asking.
         if reward_amount <= 0 {
             fail(ContractError::RewardMustBePositive);
+        }
+
+        // Validate tags length before auth to fail fast on malformed input.
+        if tags.len() > 5 {
+            fail(ContractError::TooManyTags);
         }
 
         creator.require_auth();
@@ -67,6 +75,7 @@ impl MergeMintContract {
             deadline,
             required_verifiers: None,
             approval_threshold: 1,
+            tags,
         };
 
         storage::store_bounty(&env, &id, &bounty);
@@ -195,7 +204,14 @@ impl MergeMintContract {
             None => fail(ContractError::BountyNotFound),
         };
 
-        // GUARD 1 — double-completion prevention.
+        // GUARD 1 — dispute prevention.
+        // If the bounty is in disputed status, complete_bounty must not execute.
+        // A disputed bounty must be resolved via resolve_dispute first.
+        if bounty.status == Symbol::new(&env, STATUS_DISPUTED) {
+            fail(ContractError::BountyIsDisputed);
+        }
+
+        // GUARD 2 — double-completion prevention.
         // Reject the call if the bounty is not currently in progress. This blocks
         // repeat calls on already-completed bounties and any other terminal state.
         // Depends on claim_bounty having written STATUS_IN_PROGRESS and
@@ -208,7 +224,7 @@ impl MergeMintContract {
             fail(ContractError::BountyHasNoAssignee);
         }
 
-        // GUARD 2 — self-verification prevention.
+        // GUARD 3 — self-verification prevention.
         // The verifier must be a party independent from the assignees. Allowing the
         // same address to both claim and verify would let a contributor manufacture
         // reputation and, once escrow is introduced, drain contract funds unilaterally.
@@ -222,7 +238,7 @@ impl MergeMintContract {
         // 1. Compute all payouts and update contributor state in memory.
         // 2. Persist the status change (marking the bounty completed) BEFORE any
         //    cross-contract token transfer. This ensures that a reentrant call back
-        //    into complete_bounty would be rejected by GUARD 1 above.
+        //    into complete_bounty would be rejected by GUARD 2 above.
         // 3. Execute token transfers last.
         let token = TokenClient::new(&env, &bounty.reward_token);
         let mut payouts: Vec<(Address, i128)> = Vec::new(&env);
