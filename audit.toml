@@ -1,0 +1,4 @@
+[advisories]
+# paste is a transitive dependency of soroban-sdk; we cannot remove it.
+# RUSTSEC-2024-0436: paste - no longer maintained
+ignore = ["RUSTSEC-2024-0436"]
