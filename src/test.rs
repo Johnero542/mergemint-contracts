@@ -247,20 +247,56 @@ fn test_contract_error_messages() {
     use crate::errors::{message, ContractError};
 
     assert_eq!(message(ContractError::BountyNotFound), "bounty not found");
-    assert_eq!(message(ContractError::BountyAlreadyAssigned), "bounty already assigned");
+    assert_eq!(
+        message(ContractError::BountyAlreadyAssigned),
+        "bounty already assigned"
+    );
     assert_eq!(message(ContractError::BountyNotOpen), "bounty not open");
-    assert_eq!(message(ContractError::BountyNotInProgress), "bounty not in progress");
-    assert_eq!(message(ContractError::BountyHasNoAssignee), "bounty has no assignee");
-    assert_eq!(message(ContractError::RewardMustBePositive), "reward_amount must be positive");
-    assert_eq!(message(ContractError::NotBountyCreator), "not bounty creator");
-    assert_eq!(message(ContractError::ContributorHasActiveClaim), "contributor already has an active claim");
-    assert_eq!(message(ContractError::BountyIsDisputed), "bounty is disputed");
+    assert_eq!(
+        message(ContractError::BountyNotInProgress),
+        "bounty not in progress"
+    );
+    assert_eq!(
+        message(ContractError::BountyHasNoAssignee),
+        "bounty has no assignee"
+    );
+    assert_eq!(
+        message(ContractError::RewardMustBePositive),
+        "reward_amount must be positive"
+    );
+    assert_eq!(
+        message(ContractError::NotBountyCreator),
+        "not bounty creator"
+    );
+    assert_eq!(
+        message(ContractError::ContributorHasActiveClaim),
+        "contributor already has an active claim"
+    );
+    assert_eq!(
+        message(ContractError::BountyIsDisputed),
+        "bounty is disputed"
+    );
     assert_eq!(message(ContractError::TooManyTags), "too many tags");
-    assert_eq!(message(ContractError::OnlyCreatorOrAssigneeCanDispute), "only creator or assignee can raise dispute");
-    assert_eq!(message(ContractError::DeadlineNotPassed), "deadline has not passed");
-    assert_eq!(message(ContractError::BountyDeadlinePassed), "bounty deadline passed");
-    assert_eq!(message(ContractError::BountyNoDeadline), "bounty has no deadline");
-    assert_eq!(message(ContractError::ReputationTooLow), "contributor reputation is too low");
+    assert_eq!(
+        message(ContractError::OnlyCreatorOrAssigneeCanDispute),
+        "only creator or assignee can raise dispute"
+    );
+    assert_eq!(
+        message(ContractError::DeadlineNotPassed),
+        "deadline has not passed"
+    );
+    assert_eq!(
+        message(ContractError::BountyDeadlinePassed),
+        "bounty deadline passed"
+    );
+    assert_eq!(
+        message(ContractError::BountyNoDeadline),
+        "bounty has no deadline"
+    );
+    assert_eq!(
+        message(ContractError::ReputationTooLow),
+        "contributor reputation is too low"
+    );
 }
 
 /// ContractError::TooManyTags is wired to the correct panic message.

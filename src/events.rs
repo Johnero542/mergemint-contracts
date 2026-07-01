@@ -52,8 +52,10 @@ pub fn emit_approval_recorded(
     approval_count: u32,
 ) {
     let topic = Symbol::new(env, "approval_recorded");
-    env.events()
-        .publish((topic, verifier.clone()), (bounty_id.clone(), approval_count));
+    env.events().publish(
+        (topic, verifier.clone()),
+        (bounty_id.clone(), approval_count),
+    );
 }
 
 pub fn emit_dispute_resolved(
@@ -63,6 +65,8 @@ pub fn emit_dispute_resolved(
     resolution: &Symbol,
 ) {
     let topic = Symbol::new(env, "dispute_resolved");
-    env.events()
-        .publish((topic, arbitrator.clone()), (bounty_id.clone(), resolution.clone()));
+    env.events().publish(
+        (topic, arbitrator.clone()),
+        (bounty_id.clone(), resolution.clone()),
+    );
 }

@@ -46,7 +46,9 @@ pub const fn message(e: ContractError) -> &'static str {
         ContractError::DeadlineNotPassed => "deadline has not passed",
         ContractError::ReputationTooLow => "contributor reputation is too low",
         ContractError::TooManyTags => "too many tags",
-        ContractError::OnlyCreatorOrAssigneeCanDispute => "only creator or assignee can raise dispute",
+        ContractError::OnlyCreatorOrAssigneeCanDispute => {
+            "only creator or assignee can raise dispute"
+        }
     }
 }
 
