@@ -142,6 +142,9 @@ export class MergeMintSDK {
   private readonly contractId: string;
 
   constructor(config: NetworkConfig) {
+    if (!config.networkPassphrase || config.networkPassphrase.trim() === "") {
+      throw new Error("Invalid networkPassphrase: value cannot be empty.");
+    }
     this.rpc = new SorobanRpc.Server(config.rpcUrl);
     this.contract = new Contract(config.contractId);
     this.networkPassphrase = config.networkPassphrase;
