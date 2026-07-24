@@ -178,7 +178,7 @@ export class MergeMintSDK {
   async getBountyCount(): Promise<bigint> {
     const result = await this.simulateReadCall("get_bounty_count", []);
     if (!result) return 0n;
-    return BigInt(scValToNative(result) as string);
+    return BigInt(scValToNative(result) as string | number | bigint);
   }
 
   async getOpenBounties(): Promise<string[]> {
