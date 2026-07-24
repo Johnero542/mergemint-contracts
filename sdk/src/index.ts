@@ -142,6 +142,9 @@ export class MergeMintSDK {
   private readonly contractId: string;
 
   constructor(config: NetworkConfig) {
+    if (config.rpcUrl.includes("XCa...") || config.rpcUrl.includes("...")) {
+      throw new Error("Invalid RPC URL: placeholder detected in configuration. Please provide a valid Soroban RPC provider URL.");
+    }
     this.rpc = new SorobanRpc.Server(config.rpcUrl);
     this.contract = new Contract(config.contractId);
     this.networkPassphrase = config.networkPassphrase;
