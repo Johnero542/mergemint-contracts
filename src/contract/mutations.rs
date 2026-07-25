@@ -157,8 +157,15 @@ impl MergeMintContract {
             panic!("contributor reputation is too low");
         }
 
-        // For single-assignee bounties the sole claimant gets 10 000 basis points (100%).
-        let share_bp: u32 = 10_000;
+        // Compute per-assignee share as an equal split of 10,000 basis points.
+        // The first assignee receives any remainder from the division.
+        let base_share: u32 = 10_000 / bounty.max_assignees;
+        let remainder: u32 = 10_000 % bounty.max_assignees;
+        let share_bp = if bounty.assignees.is_empty() {
+            base_share + remainder
+        } else {
+            base_share
+        };
         bounty.assignees.push_back((contributor.clone(), share_bp));
 
         let previous_status = bounty.status.clone();

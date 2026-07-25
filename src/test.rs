@@ -662,12 +662,22 @@ fn test_multi_assignee_bounty_two_claimants() {
     let bounty = client.get_bounty(&bounty_id).unwrap();
     assert_eq!(bounty.assignees.len(), 1);
     assert_eq!(bounty.status, Symbol::new(&env, "in_progress"));
+    // First claimant gets the remainder-adjusted share.
+    let (addr1, share1) = bounty.assignees.get(0).unwrap();
+    assert_eq!(addr1, contributor);
+    assert_eq!(share1, 5_000u32);
 
     // Second contributor claims the remaining slot.
     client.claim_bounty(&contributor2, &bounty_id);
     let bounty = client.get_bounty(&bounty_id).unwrap();
     assert_eq!(bounty.assignees.len(), 2);
     assert_eq!(bounty.max_assignees, 2);
+    // Each subsequent claimant gets the base share.
+    let (addr2, share2) = bounty.assignees.get(1).unwrap();
+    assert_eq!(addr2, contributor2);
+    assert_eq!(share2, 5_000u32);
+    // Sum of shares must equal 10,000 basis points.
+    assert_eq!(share1 + share2, 10_000u32);
 }
 
 /// A third contributor cannot claim a bounty with max_assignees=2.
@@ -748,4 +758,52 @@ fn test_max_assignees_stored_and_retrieved() {
 fn test_fail_max_assignees_must_be_positive_message() {
     use crate::errors::{fail, ContractError};
     fail(ContractError::MaxAssigneesMustBePositive);
+}
+
+// ===========================================================================
+// Issue 10 — basis-point splitting on claim
+// ===========================================================================
+
+/// With max_assignees=3, the sum of all assignees' shares must equal 10,000.
+/// The first assignee receives any remainder from the division.
+#[test]
+fn test_claim_bounty_splits_share_among_assignees() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contributor3 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "split"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &3,
+    );
+
+    // Three contributors claim the 3-slot bounty.
+    client.claim_bounty(&contributor, &bounty_id);
+    client.claim_bounty(&contributor2, &bounty_id);
+    client.claim_bounty(&contributor3, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.assignees.len(), 3);
+
+    // Sum of all shares must equal 10,000 basis points.
+    let mut total_shares: u32 = 0;
+    for (_, share) in bounty.assignees.iter() {
+        total_shares += share;
+    }
+    assert_eq!(total_shares, 10_000u32);
+
+    // With max_assignees=3, base is 3,333 and remainder is 1.
+    // First gets 3,334, others get 3,333 each.
+    assert_eq!(bounty.assignees.get(0).unwrap().1, 3_334u32);
+    assert_eq!(bounty.assignees.get(1).unwrap().1, 3_333u32);
+    assert_eq!(bounty.assignees.get(2).unwrap().1, 3_333u32);
 }
