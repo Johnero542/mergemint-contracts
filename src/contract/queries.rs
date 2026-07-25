@@ -11,6 +11,14 @@ impl MergeMintContract {
         storage::get_bounty_meta(&env, &bounty_id)
     }
 
+    pub fn get_bounty_metas(env: Env, ids: Vec<BountyId>) -> Vec<Option<BountyMeta>> {
+        let mut result: Vec<Option<BountyMeta>> = Vec::new(&env);
+        for id in ids.iter() {
+            result.push_back(storage::get_bounty_meta(&env, &id));
+        }
+        result
+    }
+
     pub fn get_contributor(env: Env, address: Address) -> Option<Contributor> {
         storage::get_contributor(&env, &address)
     }

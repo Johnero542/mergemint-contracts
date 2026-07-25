@@ -562,6 +562,53 @@ fn test_update_contributor_metadata_overwrites() {
 }
 
 // ===========================================================================
+// Batch query: get_bounty_metas
+// ===========================================================================
+
+/// Batch query returns correct metas for known IDs and None for unknown IDs.
+#[test]
+fn test_get_bounty_metas_batch() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let id1 = make_bounty(&client, &env, &creator, "meta1", None);
+    let id2 = make_bounty(&client, &env, &creator, "meta2", None);
+
+    // Use a non-zero pattern for unknown IDs (see Bounty ID generation pitfall:
+    // the first bounty has count=0, producing all zeros)
+    let unknown_id = crate::types::BountyId(soroban_sdk::BytesN::from_array(
+        &env, &[0xffu8; 32],
+    ));
+
+    let mut ids: Vec<crate::types::BountyId> = Vec::new(&env);
+    ids.push_back(id1.clone());
+    ids.push_back(unknown_id.clone());
+    ids.push_back(id2.clone());
+
+    let results = client.get_bounty_metas(&ids);
+    assert_eq!(results.len(), 3);
+
+    // First result: known ID — should be Some
+    match results.get(0).unwrap() {
+        Some(meta) => assert_eq!(meta.title, Symbol::new(&env, "meta1")),
+        None => panic!("expected Some for known ID"),
+    }
+
+    // Second result: unknown ID — should be None
+    match results.get(1).unwrap() {
+        Some(_) => panic!("expected None for unknown ID"),
+        None => {} // expected
+    }
+
+    // Third result: known ID — should be Some
+    match results.get(2).unwrap() {
+        Some(meta) => assert_eq!(meta.title, Symbol::new(&env, "meta2")),
+        None => panic!("expected Some for known ID"),
+    }
+}
+
+// ===========================================================================
 // Security: double-completion guard
 // ===========================================================================
 
