@@ -617,3 +617,30 @@ fn test_assignee_cannot_self_verify() {
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
 }
+
+// ===========================================================================
+// Issue 8 — resolve_dispute complete with empty assignees
+// ============================================================================
+
+/// resolve_dispute("complete") on a disputed bounty with no assignees must panic.
+#[test]
+#[should_panic(expected = "bounty has no assignee")]
+fn test_resolve_dispute_complete_with_no_assignees_panics() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "no_assignees", None);
+    // Bounty is "open" with no assignees — raise dispute.
+    client.raise_dispute(&creator, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "disputed"));
+
+    // Resolve with "complete" on an assignee-less bounty must panic.
+    client.resolve_dispute(
+        &creator,
+        &bounty_id,
+        &Symbol::new(&env, "complete"),
+    );
+}

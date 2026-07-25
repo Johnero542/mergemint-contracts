@@ -419,6 +419,10 @@ impl MergeMintContract {
         let resolve_cancel = Symbol::new(&env, "cancel");
 
         if resolution == resolve_complete {
+            if bounty.assignees.is_empty() {
+                fail(ContractError::BountyHasNoAssignee);
+            }
+
             let token = TokenClient::new(&env, &bounty.reward_token);
 
             for (assignee, share_bp) in bounty.assignees.iter() {
