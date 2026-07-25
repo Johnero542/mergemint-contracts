@@ -23,6 +23,8 @@ export const TESTNET: Omit<NetworkConfig, "contractId"> = {
   networkPassphrase: Networks.TESTNET,
 };
 
+const MAINNET_RPC_PLACEHOLDER_PATTERN = /\/v1\/XCa\.\.\.$/;
+
 export const MAINNET: Omit<NetworkConfig, "contractId"> = {
   rpcUrl: "https://mainnet.stellar.validationcloud.io/v1/XCa...",
   networkPassphrase: Networks.PUBLIC,
@@ -142,6 +144,12 @@ export class MergeMintSDK {
   private readonly contractId: string;
 
   constructor(config: NetworkConfig) {
+    if (MAINNET_RPC_PLACEHOLDER_PATTERN.test(config.rpcUrl)) {
+      throw new Error(
+        "MAINNET.rpcUrl is a placeholder and is not a functional RPC endpoint. " +
+          "Provide your own RPC provider URL instead of using the MAINNET export as-is.",
+      );
+    }
     this.rpc = new SorobanRpc.Server(config.rpcUrl);
     this.contract = new Contract(config.contractId);
     this.networkPassphrase = config.networkPassphrase;
