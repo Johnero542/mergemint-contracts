@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, Symbol, Vec};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -496,6 +496,105 @@ fn test_second_contributor_cannot_claim_full_bounty() {
     // A different contributor tries to claim a full single-slot bounty.
     let contributor2 = Address::generate(&env);
     client.claim_bounty(&contributor2, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 451 — claim_bounty deadline enforcement
+// ===========================================================================
+
+/// Claiming a bounty whose deadline has passed must panic.
+#[test]
+#[should_panic(expected = "bounty deadline passed")]
+fn test_claim_bounty_after_deadline_panics() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create a bounty with a deadline at ledger sequence 50.
+    let bounty_id = make_bounty(&client, &env, &creator, "dl_claim", Some(50));
+
+    // Advance ledger past the deadline.
+    env.ledger().set_sequence_number(100);
+
+    // Claiming must fail — deadline has passed.
+    client.claim_bounty(&contributor, &bounty_id);
+}
+
+/// Claiming a bounty before its deadline must succeed.
+#[test]
+fn test_claim_bounty_before_deadline_succeeds() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create a bounty with a deadline at ledger sequence 100.
+    let bounty_id = make_bounty(&client, &env, &creator, "dl_ok", Some(100));
+
+    // Ledger is still at 0 — deadline is in the future.
+    client.claim_bounty(&contributor, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "in_progress"));
+}
+
+// ===========================================================================
+// Issue 452 — claim_bounty minimum-reputation rejection
+// ===========================================================================
+
+/// Claiming a bounty with min_reputation > 0 as a 0-reputation contributor must panic.
+#[test]
+#[should_panic(expected = "contributor reputation is too low")]
+fn test_claim_bounty_rejects_low_reputation() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create a bounty with min_reputation = 10.
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "rep_b"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &10,
+        &None,
+        &Vec::new(&env),
+    );
+
+    let bounty_id = client.get_bounties_by_creator(&creator).get(0).unwrap();
+    // Contributor has 0 reputation — must be rejected.
+    client.claim_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 455 — cancel_bounty rejection paths
+// ===========================================================================
+
+/// Cancelling a bounty as a non-creator must panic.
+#[test]
+#[should_panic(expected = "not bounty creator")]
+fn test_cancel_bounty_non_creator_fails() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "cancel_nc", None);
+    // Contributor is not the creator — must be rejected.
+    client.cancel_bounty(&contributor, &bounty_id);
+}
+
+/// Cancelling a bounty that is already claimed (in_progress) must panic.
+#[test]
+#[should_panic(expected = "bounty not open")]
+fn test_cancel_bounty_claimed_bounty_fails() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "cancel_cl", None);
+    client.claim_bounty(&contributor, &bounty_id);
+    // Bounty is now in_progress — cancel must fail.
+    client.cancel_bounty(&creator, &bounty_id);
 }
 
 // ===========================================================================
