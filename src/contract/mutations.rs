@@ -27,6 +27,7 @@ impl MergeMintContract {
     /// * `min_reputation` - Minimum reputation score required to claim (0 = no minimum).
     /// * `deadline` - Optional ledger sequence deadline after which the bounty cannot be claimed.
     /// * `tags` - Categorisation tags (e.g. "bug", "docs"). At most 5 tags allowed.
+    /// * `max_assignees` - Maximum number of contributors who can claim this bounty (must be >= 1).
     ///
     /// # Returns
     /// The newly generated `BountyId` that uniquely identifies this bounty.
@@ -34,6 +35,7 @@ impl MergeMintContract {
     /// # Panics
     /// * If `reward_amount` is not strictly positive.
     /// * If `tags.len() > 5` (`ContractError::TooManyTags`).
+    /// * If `max_assignees < 1` (`ContractError::MaxAssigneesMustBePositive`).
     ///
     /// # Authorization
     /// Requires auth from `creator`.
@@ -47,6 +49,7 @@ impl MergeMintContract {
         min_reputation: u32,
         deadline: Option<u32>,
         tags: Vec<Symbol>,
+        max_assignees: u32,
     ) -> BountyId {
         // Validated first, ahead of auth and all storage interaction: a non-positive
         // reward is a malformed request regardless of who is asking.
@@ -59,6 +62,11 @@ impl MergeMintContract {
             fail(ContractError::TooManyTags);
         }
 
+        // Validate max_assignees before auth: at least 1 is required.
+        if max_assignees < 1 {
+            fail(ContractError::MaxAssigneesMustBePositive);
+        }
+
         creator.require_auth();
 
         let count = storage::get_bounty_count(&env);
@@ -69,7 +77,7 @@ impl MergeMintContract {
             reward_amount,
             reward_token,
             assignees: Vec::new(&env),
-            max_assignees: 1,
+            max_assignees,
             status: Symbol::new(&env, STATUS_OPEN),
             min_reputation,
             deadline,

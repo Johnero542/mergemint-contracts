@@ -37,6 +37,7 @@ fn make_bounty(
         &0,
         &deadline,
         &Vec::new(env),
+        &1,
     )
 }
 
@@ -64,6 +65,7 @@ fn test_tags_stored_and_retrieved() {
         &0,
         &None,
         &tags,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -88,6 +90,7 @@ fn test_empty_tags_valid() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -117,6 +120,7 @@ fn test_five_tags_allowed() {
         &0,
         &None,
         &tags,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -145,6 +149,7 @@ fn test_too_many_tags_panics() {
         &0,
         &None,
         &tags,
+        &1,
     );
 }
 
@@ -297,6 +302,10 @@ fn test_contract_error_messages() {
         message(ContractError::ReputationTooLow),
         "contributor reputation is too low"
     );
+    assert_eq!(
+        message(ContractError::MaxAssigneesMustBePositive),
+        "max_assignees must be at least 1"
+    );
 }
 
 /// ContractError::TooManyTags is wired to the correct panic message.
@@ -336,6 +345,7 @@ fn test_create_bounty() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -362,6 +372,7 @@ fn test_claim_bounty() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
     client.claim_bounty(&contributor, &bounty_id);
 
@@ -388,6 +399,7 @@ fn test_bounty_count() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
     assert_eq!(client.get_bounty_count(), 1);
     client.create_bounty(
@@ -399,6 +411,7 @@ fn test_bounty_count() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
     assert_eq!(client.get_bounty_count(), 2);
 }
@@ -583,6 +596,7 @@ fn test_double_complete_panics() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     // Bounty is "open", not "in_progress" — must panic.
@@ -610,10 +624,128 @@ fn test_assignee_cannot_self_verify() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     client.claim_bounty(&contributor, &bounty_id);
 
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 9 — max_assignees parameter
+// ===========================================================================
+
+/// Creating a bounty with max_assignees=2 allows two contributors to claim it.
+#[test]
+fn test_multi_assignee_bounty_two_claimants() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "multi"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &2,
+    );
+
+    // First contributor claims.
+    client.claim_bounty(&contributor, &bounty_id);
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.assignees.len(), 1);
+    assert_eq!(bounty.status, Symbol::new(&env, "in_progress"));
+
+    // Second contributor claims the remaining slot.
+    client.claim_bounty(&contributor2, &bounty_id);
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.assignees.len(), 2);
+    assert_eq!(bounty.max_assignees, 2);
+}
+
+/// A third contributor cannot claim a bounty with max_assignees=2.
+#[test]
+#[should_panic(expected = "bounty already assigned")]
+fn test_multi_assignee_bounty_full_rejects_third() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contributor3 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "full"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &2,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.claim_bounty(&contributor2, &bounty_id);
+    // Third contributor tries to claim a full 2-slot bounty — must panic.
+    client.claim_bounty(&contributor3, &bounty_id);
+}
+
+/// Creating a bounty with max_assignees=0 must panic.
+#[test]
+#[should_panic(expected = "max_assignees must be at least 1")]
+fn test_create_bounty_with_zero_max_assignees_panics() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "zero"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
+}
+
+/// The max_assignees value is stored and retrievable via get_bounty.
+#[test]
+fn test_max_assignees_stored_and_retrieved() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "stored"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &5,
+    );
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.max_assignees, 5);
+}
+
+/// ContractError::MaxAssigneesMustBePositive is wired to the correct panic message.
+#[test]
+#[should_panic(expected = "max_assignees must be at least 1")]
+fn test_fail_max_assignees_must_be_positive_message() {
+    use crate::errors::{fail, ContractError};
+    fail(ContractError::MaxAssigneesMustBePositive);
 }
