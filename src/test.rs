@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, Symbol, Vec};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -254,7 +254,7 @@ fn test_contract_error_messages() {
     assert_eq!(message(ContractError::BountyNotOpen), "bounty not open");
     assert_eq!(
         message(ContractError::BountyNotInProgress),
-        "bounty not in progress"
+        "bounty is not in progress"
     );
     assert_eq!(
         message(ContractError::BountyHasNoAssignee),
@@ -267,6 +267,14 @@ fn test_contract_error_messages() {
     assert_eq!(
         message(ContractError::NotBountyCreator),
         "not bounty creator"
+    );
+    assert_eq!(
+        message(ContractError::VerifierCannotBeAssignee),
+        "verifier cannot be the assignee"
+    );
+    assert_eq!(
+        message(ContractError::CreatorCannotClaim),
+        "creator cannot claim"
     );
     assert_eq!(
         message(ContractError::ContributorHasActiveClaim),
@@ -297,6 +305,22 @@ fn test_contract_error_messages() {
         message(ContractError::ReputationTooLow),
         "contributor reputation is too low"
     );
+    assert_eq!(
+        message(ContractError::VerifierNotAuthorized),
+        "verifier is not in the required verifiers list"
+    );
+    assert_eq!(
+        message(ContractError::AlreadyApproved),
+        "verifier has already approved this bounty"
+    );
+    assert_eq!(
+        message(ContractError::BountyNotDisputed),
+        "bounty is not in disputed status"
+    );
+    assert_eq!(
+        message(ContractError::NotArbitrator),
+        "caller is not authorized to resolve this dispute"
+    );
 }
 
 /// ContractError::TooManyTags is wired to the correct panic message.
@@ -313,6 +337,53 @@ fn test_fail_too_many_tags_message() {
 fn test_fail_bounty_is_disputed_message() {
     use crate::errors::{fail, ContractError};
     fail(ContractError::BountyIsDisputed);
+}
+
+// ===========================================================================
+// Issue 435 — reject past deadlines at creation time
+// ===========================================================================
+
+/// Creating a bounty with a deadline already in the past must panic.
+#[test]
+#[should_panic(expected = "bounty deadline passed")]
+fn test_create_bounty_rejects_past_deadline() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Ledger sequence starts at 0; set to 100 so a deadline of 50 is in the past.
+    env.ledger().set_sequence_number(100);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "past_dl"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &Some(50),
+        &Vec::new(&env),
+    );
+}
+
+/// Creating a bounty with a future deadline must succeed.
+#[test]
+fn test_create_bounty_accepts_future_deadline() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Ledger sequence starts at 0; a deadline of 100 is in the future.
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "future_dl"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &Some(100),
+        &Vec::new(&env),
+    );
 }
 
 // ===========================================================================
