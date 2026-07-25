@@ -11,6 +11,41 @@ fn generate_bounty_id(env: &Env, count: u64) -> BountyId {
     BountyId(BytesN::from_array(env, &buf))
 }
 
+/// Shared payout loop used by `complete_bounty`, `approve_completion`,
+/// and `resolve_dispute`'s "complete" branch.
+///
+/// For each assignee, computes the proportional payout from `reward_amount`,
+/// transfers the token, updates the contributor profile, and emits the
+/// `reward_paid` event. Returns the primary (first) assignee address.
+fn distribute_payout(
+    env: &Env,
+    bounty_id: &BountyId,
+    assignees: &Vec<(Address, u32)>,
+    from: &Address,
+    token: &TokenClient,
+    reward_amount: i128,
+) -> Address {
+    let (primary_assignee, _) = assignees.get(0).unwrap();
+
+    for (assignee, share_bp) in assignees.iter() {
+        let payout = reward_amount * (share_bp as i128) / 10_000_i128;
+        token.transfer(from, &assignee, &payout);
+
+        let mut contrib = storage::get_contributor(env, &assignee)
+            .unwrap_or_else(|| Contributor::new(assignee.clone()));
+        contrib.reputation += 10;
+        contrib.total_earned += payout;
+        contrib.contribution_count += 1;
+        if contrib.active_claims > 0 {
+            contrib.active_claims -= 1;
+        }
+        storage::store_contributor(env, &assignee, &contrib);
+        events::emit_reward_paid(env, bounty_id, &assignee, &payout);
+    }
+
+    primary_assignee
+}
+
 #[contractimpl]
 impl MergeMintContract {
     /// Create a new bounty.
@@ -239,29 +274,7 @@ impl MergeMintContract {
         // 2. Persist the status change (marking the bounty completed) BEFORE any
         //    cross-contract token transfer. This ensures that a reentrant call back
         //    into complete_bounty would be rejected by GUARD 2 above.
-        // 3. Execute token transfers last.
-        let token = TokenClient::new(&env, &bounty.reward_token);
-        let mut payouts: Vec<(Address, i128)> = Vec::new(&env);
-
-        for (assignee, share_bp) in bounty.assignees.iter() {
-            let payout = bounty.reward_amount * (share_bp as i128) / 10_000_i128;
-            payouts.push_back((assignee.clone(), payout));
-
-            let mut contrib = storage::get_contributor(&env, &assignee)
-                .unwrap_or_else(|| Contributor::new(assignee.clone()));
-
-            contrib.reputation += 10;
-            contrib.total_earned += payout;
-            contrib.contribution_count += 1;
-            if contrib.active_claims > 0 {
-                contrib.active_claims -= 1;
-            }
-
-            // Persist the updated contributor profile before the token transfer.
-            storage::store_contributor(&env, &assignee, &contrib);
-        }
-
-        // Persist status transition before any cross-contract call.
+        // 3. Execute token transfers via the shared helper.
         let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_COMPLETED);
@@ -269,10 +282,10 @@ impl MergeMintContract {
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
         // Now safe to execute token transfers — bounty is already marked completed.
-        for (assignee, payout) in payouts.iter() {
-            token.transfer(&verifier, &assignee, &payout);
-            events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
-        }
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        distribute_payout(
+            &env, &bounty_id, &bounty.assignees, &verifier, &token, bounty.reward_amount,
+        );
 
         events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
     }
@@ -326,22 +339,9 @@ impl MergeMintContract {
 
         if approval_count >= threshold {
             let token = TokenClient::new(&env, &bounty.reward_token);
-
-            for (assignee, share_bp) in bounty.assignees.iter() {
-                let payout = (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
-                token.transfer(&verifier, &assignee, &payout);
-
-                let mut contrib = storage::get_contributor(&env, &assignee)
-                    .unwrap_or_else(|| Contributor::new(assignee.clone()));
-
-                contrib.reputation += 10;
-                contrib.total_earned += payout;
-                contrib.contribution_count += 1;
-                if contrib.active_claims > 0 { contrib.active_claims -= 1; }
-
-                storage::store_contributor(&env, &assignee, &contrib);
-                events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
-            }
+            distribute_payout(
+                &env, &bounty_id, &bounty.assignees, &verifier, &token, bounty.reward_amount,
+            );
 
             let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
             let previous_status = bounty.status.clone();
@@ -413,25 +413,10 @@ impl MergeMintContract {
 
         if resolution == resolve_complete {
             let token = TokenClient::new(&env, &bounty.reward_token);
-
-            for (assignee, share_bp) in bounty.assignees.iter() {
-                let payout =
-                    (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
-                token.transfer(&env.current_contract_address(), &assignee, &payout);
-
-                let mut contrib = storage::get_contributor(&env, &assignee)
-                    .unwrap_or_else(|| Contributor::new(assignee.clone()));
-
-                contrib.reputation += 10;
-                contrib.total_earned += payout;
-                contrib.contribution_count += 1;
-                if contrib.active_claims > 0 {
-                    contrib.active_claims -= 1;
-                }
-
-                storage::store_contributor(&env, &assignee, &contrib);
-                events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
-            }
+            distribute_payout(
+                &env, &bounty_id, &bounty.assignees,
+                &env.current_contract_address(), &token, bounty.reward_amount,
+            );
 
             let previous_status = bounty.status.clone();
             bounty.status = Symbol::new(&env, STATUS_COMPLETED);
