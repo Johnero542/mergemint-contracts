@@ -617,3 +617,26 @@ fn test_assignee_cannot_self_verify() {
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
 }
+
+// ===========================================================================
+// Issue 450 — document self-claim bug with a test
+// ===========================================================================
+
+/// The creator can currently claim their own bounty (bug #1). This test
+/// documents today's undesirable behaviour; it should be flipped to
+/// `#[should_panic(expected = "creator cannot claim")]` once issue #1 is fixed.
+#[test]
+fn test_creator_can_currently_claim_own_bounty() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "self_claim", None);
+
+    // Currently succeeds — should fail after issue #1 fix.
+    client.claim_bounty(&creator, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    let (assignee, _) = bounty.assignees.get(0).unwrap();
+    assert_eq!(assignee, creator);
+}
