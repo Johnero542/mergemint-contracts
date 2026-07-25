@@ -120,6 +120,11 @@ impl MergeMintContract {
             None => fail(ContractError::BountyNotFound),
         };
 
+        // The creator of a bounty cannot claim their own bounty.
+        if contributor == bounty.creator {
+            fail(ContractError::CreatorCannotClaim);
+        }
+
         if bounty.assignees.len() >= bounty.max_assignees {
             fail(ContractError::BountyAlreadyAssigned);
         }
