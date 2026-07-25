@@ -620,6 +620,28 @@ fn test_assignee_cannot_self_verify() {
 }
 
 // ===========================================================================
+// Issue 45 — update_contributor_metadata auth boundary
+// ===========================================================================
+
+/// Address A cannot update address B's metadata.
+/// Uses a non-mocked-auth environment to verify that require_auth rejects
+/// a mismatched signer.
+#[test]
+#[should_panic(expected = "Unauthorized function call for address")]
+fn test_update_contributor_metadata_wrong_address_rejected() {
+    let env = Env::default();
+    let _contributor = Address::generate(&env);
+    let stranger = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Without mock_all_auths(), require_auth() will reject the call because
+    // the stranger address was not authorized by the caller.
+    let uri = Symbol::new(&env, "test_uri");
+    client.update_contributor_metadata(&stranger, &uri);
+}
+
+// ===========================================================================
 // Issue 42 — resolve_dispute end-to-end coverage
 // ===========================================================================
 
