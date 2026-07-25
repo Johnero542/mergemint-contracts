@@ -20,6 +20,7 @@ pub enum ContractError {
     ReputationTooLow,
     TooManyTags,
     OnlyCreatorOrAssigneeCanDispute,
+    BountyNotDisputable,
 }
 
 /// Convert a `ContractError` to its canonical panic message and panic.
@@ -48,6 +49,9 @@ pub const fn message(e: ContractError) -> &'static str {
         ContractError::TooManyTags => "too many tags",
         ContractError::OnlyCreatorOrAssigneeCanDispute => {
             "only creator or assignee can raise dispute"
+        }
+        ContractError::BountyNotDisputable => {
+            "bounty is not in a disputable state"
         }
     }
 }

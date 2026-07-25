@@ -617,3 +617,60 @@ fn test_assignee_cannot_self_verify() {
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
 }
+
+// ===========================================================================
+// Dispute status guard
+// ===========================================================================
+
+/// raise_dispute on a completed bounty must panic.
+#[test]
+#[should_panic(expected = "bounty is not in a disputable state")]
+fn test_raise_dispute_on_completed_bounty_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let verifier = Address::generate(&env);
+
+    // Register a real token contract and mint tokens to the verifier.
+    let sac = env.register_stellar_asset_contract_v2(creator.clone());
+    let token_addr = sac.address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_addr);
+    token_admin.mint(&verifier, &1000);
+
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "completed_dispute"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &token_addr,
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    // Now bounty is "completed" — raise_dispute must panic.
+    client.raise_dispute(&creator, &bounty_id);
+}
+
+/// raise_dispute on an open bounty (no claim yet) must succeed.
+#[test]
+fn test_raise_dispute_on_open_bounty_succeeds() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "open_dispute", None);
+    // Bounty is "open" — raise_dispute should succeed.
+    client.raise_dispute(&creator, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "disputed"));
+}
