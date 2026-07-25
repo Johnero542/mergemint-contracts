@@ -532,6 +532,79 @@ fn test_status_index_moves_on_cancel() {
 }
 
 // ===========================================================================
+// Status count (issue #443)
+// ===========================================================================
+
+/// get_status_count returns 0 for a status with no bounties.
+#[test]
+fn test_status_count_initial_zero() {
+    let (env, _creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "completed")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 0);
+}
+
+/// get_status_count returns 1 after creating a single bounty (open status).
+#[test]
+fn test_status_count_one_on_create() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let _bounty_id = make_bounty(&client, &env, &creator, "count_one", None);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "completed")), 0);
+}
+
+/// get_status_count reflects the move from open to cancelled after cancel_bounty.
+#[test]
+fn test_status_count_moves_on_cancel() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "count_cancel", None);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+
+    client.cancel_bounty(&creator, &bounty_id);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
+}
+
+/// get_status_count correctly tracks multiple bounties across statuses.
+#[test]
+fn test_status_count_multiple_bounties() {
+    let (env, creator, _contributor, verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let id1 = make_bounty(&client, &env, &creator, "count_multi_a", None);
+    let id2 = make_bounty(&client, &env, &creator, "count_multi_b", None);
+    let _id3 = make_bounty(&client, &env, &creator, "count_multi_c", None);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 3);
+
+    // Cancel one
+    client.cancel_bounty(&creator, &id1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 2);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
+
+    // Claim one -> in_progress
+    let _token_addr = Address::generate(&env);
+    client.claim_bounty(&verifier, &id2);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
+}
+
+// ===========================================================================
 // Contributor metadata
 // ===========================================================================
 

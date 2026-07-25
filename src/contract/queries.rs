@@ -35,4 +35,19 @@ impl MergeMintContract {
     pub fn get_bounties_by_creator(env: Env, creator: Address) -> Vec<BountyId> {
         storage::get_creator_bounties(&env, &creator)
     }
+
+    /// Return the number of bounties currently in the given status.
+    ///
+    /// This is a lightweight alternative to calling `get_bounties_by_status`
+    /// and measuring the length of the returned `Vec`. It reads a single
+    /// `u32` counter instead of the full status-index list, making it
+    /// suitable for dashboard badges, status-summary endpoints, and other
+    /// places where only the numeric count is needed.
+    ///
+    /// The counter is maintained automatically by `add_bounty_to_status`
+    /// and `remove_bounty_from_status` in the storage layer, so it always
+    /// reflects the current number of bounties in the requested status.
+    pub fn get_status_count(env: Env, status: Symbol) -> u32 {
+        storage::get_status_count(&env, &status)
+    }
 }
