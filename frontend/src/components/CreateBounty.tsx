@@ -15,6 +15,7 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
   const [multisigOpen, setMultisigOpen] = useState(false);
   const [verifiers, setVerifiers] = useState<string[]>([""]);
   const [threshold, setThreshold] = useState(1);
+  const [maxAssignees, setMaxAssignees] = useState(1);
   const { pending, error, result, run } = useTxFlow(network);
 
   async function perform() {
@@ -40,6 +41,22 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
       <label>
         Reward amount
         <input value={rewardAmount} onChange={(e) => setRewardAmount(e.target.value)} />
+      </label>
+
+      {/* Stub UI only — wire up once contract issues #9/#10 (multi-assignee) ship. */}
+      <label>
+        Max assignees
+        <input
+          type="number"
+          min={1}
+          value={maxAssignees}
+          onChange={(e) => setMaxAssignees(Number(e.target.value))}
+        />
+        <span className="create-bounty__hint">
+          When more than one assignee is allowed, the reward is split across claimants by share
+          (see the assignee list on the bounty detail page). Not yet enforced on-chain — pending
+          contract issues #9/#10.
+        </span>
       </label>
 
       {/* Stub UI only — wire up once contract issue #11 (multi-sig verifiers) ships. */}
