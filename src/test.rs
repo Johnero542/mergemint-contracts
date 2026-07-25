@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, Symbol, Vec};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -616,4 +616,43 @@ fn test_assignee_cannot_self_verify() {
 
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 6 — BountyMeta persistent storage
+// ===========================================================================
+
+/// BountyMeta stored in persistent() storage survives ledger advancement
+/// that would have evicted a temporary() entry.
+#[test]
+fn test_bounty_meta_survives_ledger_advancement() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Set a low ledger sequence so temporary TTL would expire quickly.
+    env.ledger().set_sequence_number(1);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "persist_meta"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+
+    // Confirm meta is retrievable immediately.
+    let meta = client.get_bounty_meta(&bounty_id).unwrap();
+    assert_eq!(meta.title, Symbol::new(&env, "persist_meta"));
+
+    // Advance the ledger far past the default temporary-storage TTL window
+    // (typically 10 ledgers). A temporary entry would have been evicted.
+    env.ledger().set_sequence_number(30);
+
+    // BountyMeta must still be retrievable from persistent storage.
+    let meta = client.get_bounty_meta(&bounty_id).unwrap();
+    assert_eq!(meta.title, Symbol::new(&env, "persist_meta"));
 }
