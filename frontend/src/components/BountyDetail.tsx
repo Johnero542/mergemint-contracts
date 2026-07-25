@@ -26,6 +26,10 @@ export function BountyDetail({ bounty, network, onClaim }: BountyDetailProps) {
       </p>
       <p>Status: {bounty.status}</p>
 
+      {/* Stub only — the listed-vs-non-listed verifier approval flow activates once
+          contract issue #11 (multi-sig verifiers) ships. */}
+      <p className="bounty-detail__multisig-note">Verifiers: single-approver (multi-sig not yet enabled)</p>
+
       <ul className="assignee-list">
         {bounty.assignees.map((assignee) => (
           <li key={assignee.address}>

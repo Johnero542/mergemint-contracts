@@ -12,6 +12,9 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [rewardAmount, setRewardAmount] = useState("");
+  const [multisigOpen, setMultisigOpen] = useState(false);
+  const [verifiers, setVerifiers] = useState<string[]>([""]);
+  const [threshold, setThreshold] = useState(1);
   const { pending, error, result, run } = useTxFlow(network);
 
   async function perform() {
@@ -38,6 +41,55 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
         Reward amount
         <input value={rewardAmount} onChange={(e) => setRewardAmount(e.target.value)} />
       </label>
+
+      {/* Stub UI only — wire up once contract issue #11 (multi-sig verifiers) ships. */}
+      <details
+        className="create-bounty__advanced"
+        open={multisigOpen}
+        onToggle={(e) => setMultisigOpen((e.target as HTMLDetailsElement).open)}
+      >
+        <summary>Advanced: multi-sig verifiers</summary>
+
+        {verifiers.map((verifier, i) => (
+          <div className="verifier-row" key={i}>
+            <input
+              placeholder="Verifier address"
+              value={verifier}
+              onChange={(e) => {
+                const next = [...verifiers];
+                next[i] = e.target.value;
+                setVerifiers(next);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setVerifiers(verifiers.filter((_, idx) => idx !== i))}
+              disabled={verifiers.length <= 1}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        <button type="button" onClick={() => setVerifiers([...verifiers, ""])}>
+          Add verifier
+        </button>
+
+        <label>
+          Approval threshold
+          <select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
+            {verifiers.map((_, i) => (
+              <option key={i} value={i + 1}>
+                {i + 1} of {verifiers.length}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <p className="create-bounty__advanced-note">
+          Multi-sig verification is not yet enforced on-chain — this form does not submit these
+          fields until contract issue #11 ships.
+        </p>
+      </details>
 
       <button type="submit" disabled={pending}>
         {pending ? "Submitting…" : "Create bounty"}
