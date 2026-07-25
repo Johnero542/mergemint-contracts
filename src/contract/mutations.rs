@@ -130,7 +130,7 @@ impl MergeMintContract {
             }
         }
 
-        // #275: use Contributor::new for default construction
+        // #275: use Contributor::new for default construction (DONE - all call sites updated)
         let mut contrib = storage::get_contributor(&env, &contributor)
             .unwrap_or_else(|| Contributor::new(contributor.clone()));
 
@@ -332,14 +332,7 @@ impl MergeMintContract {
                 token.transfer(&verifier, &assignee, &payout);
 
                 let mut contrib = storage::get_contributor(&env, &assignee)
-                    .unwrap_or(Contributor {
-                        address: assignee.clone(),
-                        reputation: 0,
-                        total_earned: 0,
-                        contribution_count: 0,
-                        active_claims: 0,
-                        metadata: None,
-                    });
+                    .unwrap_or_else(|| Contributor::new(assignee.clone()));
 
                 contrib.reputation += 10;
                 contrib.total_earned += payout;
@@ -427,14 +420,7 @@ impl MergeMintContract {
                 token.transfer(&env.current_contract_address(), &assignee, &payout);
 
                 let mut contrib = storage::get_contributor(&env, &assignee)
-                    .unwrap_or(Contributor {
-                        address: assignee.clone(),
-                        reputation: 0,
-                        total_earned: 0,
-                        contribution_count: 0,
-                        active_claims: 0,
-                        metadata: None,
-                    });
+                    .unwrap_or_else(|| Contributor::new(assignee.clone()));
 
                 contrib.reputation += 10;
                 contrib.total_earned += payout;
@@ -478,7 +464,7 @@ impl MergeMintContract {
     pub fn update_contributor_metadata(env: Env, contributor: Address, metadata: Symbol) {
         contributor.require_auth();
 
-        // #275: use Contributor::new for default construction
+        // #275: use Contributor::new for default construction (DONE - all call sites updated)
         let mut contrib = storage::get_contributor(&env, &contributor)
             .unwrap_or_else(|| Contributor::new(contributor.clone()));
 
