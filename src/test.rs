@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
+use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol, Vec};
+use soroban_sdk::token::StellarAssetClient;
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -616,4 +617,185 @@ fn test_assignee_cannot_self_verify() {
 
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 42 — resolve_dispute end-to-end coverage
+// ===========================================================================
+
+/// A non-creator (non-arbitrator) calling resolve_dispute must panic.
+#[test]
+#[should_panic(expected = "caller is not authorized to resolve this dispute")]
+fn test_resolve_dispute_non_arbitrator_rejected() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "arb1", None);
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    // An unrelated third party (non-creator) tries to resolve — must panic.
+    let stranger = Address::generate(&env);
+    client.resolve_dispute(&stranger, &bounty_id, &Symbol::new(&env, "complete"));
+}
+
+/// Resolving a bounty that is not in "disputed" status must panic.
+#[test]
+#[should_panic(expected = "bounty is not in disputed status")]
+fn test_resolve_dispute_non_disputed_rejected() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "ndisp", None);
+    client.claim_bounty(&contributor, &bounty_id);
+
+    // Bounty is "in_progress", not "disputed" — must panic.
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "complete"));
+}
+
+/// Resolving with the "complete" resolution pays assignees from the contract
+/// address and transitions the bounty to "completed" status.
+#[test]
+fn test_resolve_dispute_complete_pays_out() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Register a real token for the payout.
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_addr = sac.address();
+
+    // Mint 1000 units to the contract address (the resolve_dispute "complete"
+    // path transfers from env.current_contract_address()).
+    let token = StellarAssetClient::new(&env, &token_addr);
+    token.mint(&contract_id, &1000);
+
+    // Create a bounty with the real token.
+    let reward_amount: i128 = 1000;
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "comp_disp"),
+        &Symbol::new(&env, "desc"),
+        &reward_amount,
+        &token_addr,
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    // Check pre-resolve balance: contract has 1000, assignee has 0.
+    assert_eq!(token.balance(&contract_id), 1000);
+    assert_eq!(token.balance(&contributor), 0);
+
+    // Resolve with "complete".
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "complete"));
+
+    // After resolve: contract balance is 0, assignee received 1000.
+    assert_eq!(token.balance(&contract_id), 0);
+    assert_eq!(token.balance(&contributor), 1000);
+
+    // Bounty status is now "completed".
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "completed"));
+
+    // Contributor reputation increased by 10.
+    let contrib = client.get_contributor(&contributor).unwrap();
+    assert_eq!(contrib.reputation, 10);
+}
+
+/// Resolving with the "cancel" resolution transitions the bounty to "cancelled"
+/// status without any token transfer.
+#[test]
+fn test_resolve_dispute_cancel_transitions() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "cancel_disp", None);
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    // Resolve with "cancel".
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "cancel"));
+
+    // Bounty status is now "cancelled".
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "cancelled"));
+}
+
+/// An invalid resolution string must panic.
+#[test]
+#[should_panic(expected = "resolution must be 'complete' or 'cancel'")]
+fn test_resolve_dispute_invalid_resolution() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "invalid_res", None);
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    // Use an invalid resolution.
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "invalid"));
+}
+
+// ===========================================================================
+// Issue 438 — reputation monotonicity invariant
+// ===========================================================================
+
+/// Reputation never decreases across multiple completions for the same
+/// contributor. After each of 3 completions, the contributor's reputation
+/// must have increased by exactly 10 points.
+#[test]
+fn test_reputation_never_decreases_across_multiple_completions() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Register a real token so the verifier can transfer.
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_addr = sac.address();
+
+    // Mint 10_000 units to the verifier.
+    let verifier = Address::generate(&env);
+    let token = StellarAssetClient::new(&env, &token_addr);
+    token.mint(&verifier, &10_000);
+
+    // Create 3 bounties, each with the real token and 0 min_reputation.
+    let mut bounty_ids = Vec::new(&env);
+    for _ in 0..3 {
+        let id = client.create_bounty(
+            &creator,
+            &Symbol::new(&env, "rep"),
+            &Symbol::new(&env, "desc"),
+            &1000,
+            &token_addr,
+            &0,
+            &None,
+            &Vec::new(&env),
+        );
+        bounty_ids.push_back(id);
+    }
+
+    // Claim and complete each bounty, checking reputation after each.
+    for i in 0..3 {
+        let id = bounty_ids.get(i).unwrap();
+        client.claim_bounty(&contributor, &id);
+        client.complete_bounty(&verifier, &id);
+
+        let contrib = client.get_contributor(&contributor).unwrap();
+        let expected_rep: u32 = (i + 1) * 10;
+        assert_eq!(
+            contrib.reputation, expected_rep,
+            "reputation after {} completions should be {}",
+            i + 1, expected_rep
+        );
+    }
 }
