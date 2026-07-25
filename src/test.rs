@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
+use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol, Vec};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -31,7 +31,7 @@ fn make_bounty(
     client.create_bounty(
         creator,
         &Symbol::new(env, tag),
-        &Symbol::new(env, "desc"),
+        &String::from_str(env, "desc"),
         &1000,
         &Address::generate(env),
         &0,
@@ -58,7 +58,7 @@ fn test_tags_stored_and_retrieved() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "tagged"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
@@ -82,7 +82,7 @@ fn test_empty_tags_valid() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "no_tags"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
@@ -111,7 +111,7 @@ fn test_five_tags_allowed() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "max_tags"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
@@ -139,7 +139,7 @@ fn test_too_many_tags_panics() {
     client.create_bounty(
         &creator,
         &Symbol::new(&env, "overtags"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
@@ -330,7 +330,7 @@ fn test_create_bounty() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "test_b"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &reward_amount,
         &reward_token,
         &0,
@@ -345,6 +345,10 @@ fn test_create_bounty() {
 
     let meta = client.get_bounty_meta(&bounty_id).unwrap();
     assert_eq!(meta.title, Symbol::new(&env, "test_b"));
+    assert_eq!(
+        meta.description,
+        String::from_str(&env, "desc")
+    );
 }
 
 #[test]
@@ -356,7 +360,7 @@ fn test_claim_bounty() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_1"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
@@ -382,7 +386,7 @@ fn test_bounty_count() {
     client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_a"),
-        &Symbol::new(&env, "desc_a"),
+        &String::from_str(&env, "desc_a"),
         &100,
         &reward_token,
         &0,
@@ -393,7 +397,7 @@ fn test_bounty_count() {
     client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_b"),
-        &Symbol::new(&env, "desc_b"),
+        &String::from_str(&env, "desc_b"),
         &200,
         &reward_token,
         &0,
@@ -577,7 +581,7 @@ fn test_double_complete_panics() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "dbl_complete"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
@@ -604,7 +608,7 @@ fn test_assignee_cannot_self_verify() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "self_verify"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
@@ -616,4 +620,36 @@ fn test_assignee_cannot_self_verify() {
 
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 434 — long description support
+// ===========================================================================
+
+/// A description longer than 32 characters must round-trip intact through
+/// create_bounty and get_bounty_meta.
+#[test]
+fn test_long_description_round_trips() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let long_desc = "This is a very long description that exceeds the 32-character Symbol limit and should be stored and retrieved correctly by the contract.";
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "long_desc"),
+        &String::from_str(&env, long_desc),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+
+    let meta = client.get_bounty_meta(&bounty_id).unwrap();
+    assert_eq!(meta.title, Symbol::new(&env, "long_desc"));
+    assert_eq!(
+        meta.description,
+        String::from_str(&env, long_desc)
+    );
 }
