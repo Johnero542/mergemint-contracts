@@ -347,6 +347,70 @@ fn test_create_bounty() {
     assert_eq!(meta.title, Symbol::new(&env, "test_b"));
 }
 
+// ===========================================================================
+// Issue 449 — create_bounty rejects non-positive reward_amount
+// ===========================================================================
+
+/// Creating a bounty with reward_amount = 0 must panic.
+#[test]
+#[should_panic(expected = "reward_amount must be positive")]
+fn test_create_bounty_rejects_zero_reward() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "zero_rew"),
+        &Symbol::new(&env, "desc"),
+        &0,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+}
+
+/// Creating a bounty with a negative reward_amount must panic.
+#[test]
+#[should_panic(expected = "reward_amount must be positive")]
+fn test_create_bounty_rejects_negative_reward() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "neg_rew"),
+        &Symbol::new(&env, "desc"),
+        &(-50),
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+}
+
+/// Creating a bounty with reward_amount below MIN_REWARD_AMOUNT (100) must panic.
+#[test]
+#[should_panic(expected = "reward_amount must be positive")]
+fn test_create_bounty_rejects_below_minimum_reward() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "small_rew"),
+        &Symbol::new(&env, "desc"),
+        &50,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+}
+
 #[test]
 fn test_claim_bounty() {
     let (env, creator, contributor, _verifier) = setup_test();
