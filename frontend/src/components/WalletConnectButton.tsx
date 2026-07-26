@@ -1,24 +1,24 @@
-import React from 'react';
-import { useWallet } from '../lib/WalletContext';
-import { formatAddress } from '../lib/format';
+import { shortenAddress } from "../lib/format";
+import { CopyButton } from "./CopyButton";
 
-export function WalletConnectButton() {
-  const { address, connecting, error, connect, disconnect } = useWallet();
+interface WalletConnectButtonProps {
+  address: string | null;
+  onConnect: () => void;
+}
 
-  if (address) {
+export function WalletConnectButton({ address, onConnect }: WalletConnectButtonProps) {
+  if (!address) {
     return (
-      <button onClick={disconnect} title={address}>
-        {formatAddress(address)}
+      <button className="wallet-connect" onClick={onConnect}>
+        Connect wallet
       </button>
     );
   }
 
   return (
-    <div>
-      <button onClick={connect} disabled={connecting}>
-        {connecting ? 'Connecting...' : 'Connect Wallet'}
-      </button>
-      {error && <span role="alert">{error}</span>}
-    </div>
+    <span className="wallet-connect wallet-connect--connected">
+      <span title={address}>{shortenAddress(address)}</span>
+      <CopyButton value={address} />
+    </span>
   );
 }
