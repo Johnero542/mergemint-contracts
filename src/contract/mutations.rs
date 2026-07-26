@@ -337,7 +337,7 @@ impl MergeMintContract {
 
         // If no required_verifiers list is set, fall back to immediate single-verifier completion.
         if bounty.required_verifiers.is_none() {
-            MergeMintContract::complete_bounty(env, verifier, bounty_id);
+            complete_bounty_inner(env, verifier, bounty_id);
             return;
         }
 
