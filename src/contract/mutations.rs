@@ -4,6 +4,9 @@ const STATUS_COMPLETED: &str = "completed";
 const STATUS_CANCELLED: &str = "cancelled";
 const STATUS_DISPUTED: &str = "disputed";
 
+/// Minimum reward amount enforced at bounty creation.
+const MIN_REWARD_AMOUNT: i128 = 100;
+
 fn generate_bounty_id(env: &Env, count: u64) -> BountyId {
     let mut buf = [0u8; 32];
     let count_bytes = count.to_be_bytes();
@@ -83,9 +86,10 @@ impl MergeMintContract {
         deadline: Option<u32>,
         tags: Vec<Symbol>,
     ) -> BountyId {
-        // Validated first, ahead of auth and all storage interaction: a non-positive
-        // reward is a malformed request regardless of who is asking.
-        if reward_amount <= 0 {
+        // Validated first, ahead of auth and all storage interaction: a reward
+        // below the minimum threshold is a malformed request regardless of who
+        // is asking.
+        if reward_amount < MIN_REWARD_AMOUNT {
             fail(ContractError::RewardMustBePositive);
         }
 
@@ -441,9 +445,7 @@ impl MergeMintContract {
                 contrib.reputation += 10;
                 contrib.total_earned += payout;
                 contrib.contribution_count += 1;
-                if contrib.active_claims > 0 {
-                    contrib.active_claims -= 1;
-                }
+                decrement_active_claims(&mut contrib);
 
                 storage::store_contributor(&env, &assignee, &contrib);
                 events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
