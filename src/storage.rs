@@ -130,8 +130,10 @@ pub fn set_bounties_by_status(env: &Env, status: &Symbol, bounties: &Vec<BountyI
 
 pub fn add_bounty_to_status(env: &Env, bounty_id: &BountyId, status: &Symbol) {
     let mut current = get_bounties_by_status(env, status);
-    if current.iter().all(|id| id != *bounty_id) {
+    let is_new = current.iter().all(|id| id != *bounty_id);
+    if is_new {
         current.push_back(bounty_id.clone());
+        increment_status_count(env, status);
     }
     set_bounties_by_status(env, status, &current);
 }
@@ -139,10 +141,16 @@ pub fn add_bounty_to_status(env: &Env, bounty_id: &BountyId, status: &Symbol) {
 pub fn remove_bounty_from_status(env: &Env, bounty_id: &BountyId, status: &Symbol) {
     let current = get_bounties_by_status(env, status);
     let mut updated = Vec::new(env);
+    let mut removed = false;
     for id in current.iter() {
         if id != *bounty_id {
             updated.push_back(id);
+        } else {
+            removed = true;
         }
+    }
+    if removed {
+        decrement_status_count(env, status);
     }
     set_bounties_by_status(env, status, &updated);
 }
@@ -195,6 +203,35 @@ pub fn set_open_bounties(env: &Env, bounties: &Vec<BountyId>) {
     env.storage()
         .persistent()
         .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
+}
+
+// ── Status Count ─────────────────────────────────────────────────────────────
+
+pub fn get_status_count(env: &Env, status: &Symbol) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::StatusCount(status.clone()))
+        .unwrap_or(0)
+}
+
+fn increment_status_count(env: &Env, status: &Symbol) {
+    let count = get_status_count(env, status);
+    let key = DataKey::StatusCount(status.clone());
+    env.storage().persistent().set(&key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
+}
+
+fn decrement_status_count(env: &Env, status: &Symbol) {
+    let count = get_status_count(env, status);
+    if count > 0 {
+        let key = DataKey::StatusCount(status.clone());
+        env.storage().persistent().set(&key, &(count - 1));
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
+    }
 }
 
 // ── Issue #3: Creator bounties index ─────────────────────────────────────────

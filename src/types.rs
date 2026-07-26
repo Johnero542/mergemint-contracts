@@ -31,6 +31,7 @@ pub enum DataKey {
     Contributor(Address),
     ContributorBounties(Address),
     StatusIndex(Symbol),
+    StatusCount(Symbol),
     OpenBounties,
     Approvals(BountyId),
 }
