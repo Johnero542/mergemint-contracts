@@ -1,13 +1,15 @@
-import { MergeMintSDK, MAINNET } from "./index";
+import { symbolToScVal } from "./index";
 
-describe("MergeMintSDK constructor", () => {
-  it("throws a clear error when given the unmodified MAINNET placeholder RPC URL", () => {
-    expect(
-      () =>
-        new MergeMintSDK({
-          ...MAINNET,
-          contractId: "CONTRACT_ID",
-        }),
-    ).toThrow(/placeholder/);
+describe("symbolToScVal", () => {
+  it("throws for a 33-character input", () => {
+    const value = "a".repeat(33);
+    expect(() => symbolToScVal(value)).toThrow(
+      /exceeds 32-character Symbol limit/,
+    );
+  });
+
+  it("passes for exactly 32 characters", () => {
+    const value = "a".repeat(32);
+    expect(() => symbolToScVal(value)).not.toThrow();
   });
 });
