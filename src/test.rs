@@ -973,8 +973,87 @@ fn test_double_complete_panics() {
 }
 
 // ===========================================================================
-// Security: self-verification guard
+// Status count query
 // ===========================================================================
+
+/// get_status_count matches the actual index length for open status after
+/// creating a bounty and cancelling it.
+#[test]
+fn test_status_count_open_on_create() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "open")),
+        0,
+        "no bounties yet"
+    );
+
+    let _bounty_id = make_bounty(&client, &env, &creator, "sc_open", None);
+
+    let open_count = client.get_status_count(&Symbol::new(&env, "open"));
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    assert_eq!(
+        open_count,
+        open_ids.len() as u32,
+        "count matches index length"
+    );
+    assert_eq!(open_count, 1, "exactly one open bounty");
+}
+
+/// Transaction: create → claim → cancel — verify count tracks each transition.
+#[test]
+fn test_status_count_across_transitions() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create: open=1, in_progress=0, cancelled=0
+    let bounty_id = make_bounty(&client, &env, &creator, "sc_trans", None);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 0);
+
+    // Claim: open=0, in_progress=1
+    client.claim_bounty(&contributor, &bounty_id);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 1);
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "in_progress")),
+        client.get_bounties_by_status(&Symbol::new(&env, "in_progress")).len() as u32,
+    );
+
+    // Cancel is only valid for open bounties, so create a second bounty
+    // and cancel it directly: open=0→1, cancelled=0→1
+    let bounty_id2 = make_bounty(&client, &env, &creator, "sc_trans2", None);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    client.cancel_bounty(&creator, &bounty_id2);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "cancelled")),
+        client.get_bounties_by_status(&Symbol::new(&env, "cancelled")).len() as u32,
+    );
+}
+
+/// Multiple bounties in the same status are counted correctly.
+#[test]
+fn test_status_count_multiple_bounties() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let _b1 = make_bounty(&client, &env, &creator, "sc_multi1", None);
+    let _b2 = make_bounty(&client, &env, &creator, "sc_multi2", None);
+    let _b3 = make_bounty(&client, &env, &creator, "sc_multi3", None);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 3);
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "open")),
+        client.get_bounties_by_status(&Symbol::new(&env, "open")).len() as u32,
+    );
+}
 
 /// The assignee calling complete_bounty as their own verifier must panic.
 #[test]
