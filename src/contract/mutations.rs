@@ -384,6 +384,12 @@ impl MergeMintContract {
             None => fail(ContractError::BountyNotFound),
         };
 
+        if bounty.status != Symbol::new(&env, STATUS_OPEN)
+            && bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS)
+        {
+            fail(ContractError::BountyNotDisputable);
+        }
+
         let is_assignee = bounty.assignees.iter().any(|(addr, _)| addr == caller);
         if caller != bounty.creator && !is_assignee {
             fail(ContractError::OnlyCreatorOrAssigneeCanDispute);
