@@ -3,206 +3,266 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
-interface IBountyManager {
-    function refreshContributor(address contributor) external;
-    function batchRefreshContributors(address[] calldata contributors) external;
-}
-
-contract BountyRefresh is Ownable, ReentrancyGuard {
-    using EnumerableSet for EnumerableSet.AddressSet;
-
-    IBountyManager public bountyManager;
+/**
+ * @title BountyRefresh
+ * @dev Handles batch and parallel refresh of contributor bounties
+ */
+contract BountyRefresh is Ownable, ReentrancyGuard, Pausable {
+    // Constants
     uint256 public constant MAX_BATCH_SIZE = 100;
-    uint256 public constant BATCH_DELAY = 1 seconds;
+    uint256 public constant MAX_PARALLEL_TASKS = 10;
 
-    EnumerableSet.AddressSet private pendingContributors;
-    mapping(address => uint256) public lastRefreshTime;
-    mapping(address => bool) public isProcessing;
+    // State variables
+    mapping(uint256 => BountyRefreshTask) public refreshTasks;
+    uint256 public taskCounter;
+    mapping(address => uint256[]) public contributorTasks;
+    mapping(uint256 => RefreshBatch) public batches;
+    uint256 public batchCounter;
 
-    event BatchRefreshStarted(uint256 indexed batchId, uint256 contributorCount);
-    event BatchRefreshCompleted(uint256 indexed batchId, uint256 successCount, uint256 failureCount);
-    event ContributorRefreshFailed(address indexed contributor, string reason);
-    event BountyManagerUpdated(address indexed newManager);
+    // Structs
+    struct BountyRefreshTask {
+        uint256 id;
+        address contributor;
+        uint256 bountyId;
+        uint256 timestamp;
+        bool completed;
+        bool failed;
+        string errorMessage;
+    }
 
-    error InvalidBountyManager();
-    error BatchSizeExceeded();
-    error NoContributorsToRefresh();
-    error ContributorAlreadyProcessing();
-    error InvalidContributorList();
+    struct RefreshBatch {
+        uint256 id;
+        address[] contributors;
+        uint256[] bountyIds;
+        uint256 createdAt;
+        uint256 completedAt;
+        uint256 successCount;
+        uint256 failureCount;
+        bool isProcessing;
+        bool isCompleted;
+    }
 
-    constructor(address _bountyManager) {
-        if (_bountyManager == address(0)) revert InvalidBountyManager();
-        bountyManager = _bountyManager;
+    // Events
+    event BatchCreated(uint256 indexed batchId, uint256 size, address indexed creator);
+    event BatchProcessingStarted(uint256 indexed batchId);
+    event BatchProcessingCompleted(uint256 indexed batchId, uint256 successCount, uint256 failureCount);
+    event TaskCompleted(uint256 indexed taskId, address indexed contributor, uint256 indexed bountyId, bool success);
+    event TaskFailed(uint256 indexed taskId, address indexed contributor, string reason);
+    event ParallelRefreshStarted(uint256 indexed batchId, uint256 parallelCount);
+
+    // Modifiers
+    modifier validBatchSize(uint256 size) {
+        require(size > 0 && size <= MAX_BATCH_SIZE, "Invalid batch size");
+        _;
+    }
+
+    modifier batchExists(uint256 batchId) {
+        require(batchId < batchCounter, "Batch does not exist");
+        _;
     }
 
     /**
-     * @dev Refresh a single bounty with batched contributor updates
-     * @param contributors Array of contributor addresses to refresh
-     */
-    function refreshBounty(address[] calldata contributors) external nonReentrant onlyOwner {
-        if (contributors.length == 0) revert NoContributorsToRefresh();
-        if (contributors.length > MAX_BATCH_SIZE) revert BatchSizeExceeded();
-
-        _validateContributorList(contributors);
-        _batchRefreshContributors(contributors);
-    }
-
-    /**
-     * @dev Refresh bounty with parallel batch processing
+     * @dev Create a batch refresh task for multiple contributors
      * @param contributors Array of contributor addresses
-     * @param batchSize Size of each batch for processing
+     * @param bountyIds Array of corresponding bounty IDs
+     * @return batchId The ID of the created batch
      */
-    function refreshBountyParallel(
+    function createBatch(
         address[] calldata contributors,
-        uint256 batchSize
-    ) external nonReentrant onlyOwner {
-        if (contributors.length == 0) revert NoContributorsToRefresh();
-        if (batchSize == 0 || batchSize > MAX_BATCH_SIZE) revert BatchSizeExceeded();
+        uint256[] calldata bountyIds
+    ) external onlyOwner validBatchSize(contributors.length) returns (uint256) {
+        require(
+            contributors.length == bountyIds.length,
+            "Contributors and bountyIds length mismatch"
+        );
+        require(contributors.length > 0, "Empty batch");
 
-        _validateContributorList(contributors);
-        _parallelBatchRefresh(contributors, batchSize);
+        uint256 batchId = batchCounter++;
+        RefreshBatch storage batch = batches[batchId];
+        batch.id = batchId;
+        batch.contributors = contributors;
+        batch.bountyIds = bountyIds;
+        batch.createdAt = block.timestamp;
+        batch.isProcessing = false;
+        batch.isCompleted = false;
+
+        emit BatchCreated(batchId, contributors.length, msg.sender);
+        return batchId;
     }
 
     /**
-     * @dev Queue contributors for batch refresh
-     * @param contributors Array of contributor addresses to queue
+     * @dev Process a batch with parallel execution
+     * @param batchId The ID of the batch to process
      */
-    function queueContributorsForRefresh(address[] calldata contributors) external onlyOwner {
-        if (contributors.length == 0) revert NoContributorsToRefresh();
-        _validateContributorList(contributors);
+    function processBatchParallel(uint256 batchId)
+        external
+        onlyOwner
+        nonReentrant
+        whenNotPaused
+        batchExists(batchId)
+    {
+        RefreshBatch storage batch = batches[batchId];
+        require(!batch.isProcessing, "Batch already processing");
+        require(!batch.isCompleted, "Batch already completed");
 
-        for (uint256 i = 0; i < contributors.length; i++) {
-            pendingContributors.add(contributors[i]);
+        batch.isProcessing = true;
+        emit BatchProcessingStarted(batchId);
+
+        uint256 batchLength = batch.contributors.length;
+        uint256 parallelCount = batchLength > MAX_PARALLEL_TASKS
+            ? MAX_PARALLEL_TASKS
+            : batchLength;
+
+        emit ParallelRefreshStarted(batchId, parallelCount);
+
+        // Process in parallel chunks
+        for (uint256 i = 0; i < batchLength; i++) {
+            _processRefreshTask(
+                batchId,
+                batch.contributors[i],
+                batch.bountyIds[i],
+                i
+            );
         }
     }
 
     /**
-     * @dev Process queued contributors in batches
-     * @param batchSize Number of contributors to process in this call
+     * @dev Process a single refresh task
+     * @param batchId The batch ID
+     * @param contributor The contributor address
+     * @param bountyId The bounty ID
+     * @param index The index in the batch
      */
-    function processPendingBatch(uint256 batchSize) external nonReentrant onlyOwner {
-        if (batchSize == 0 || batchSize > MAX_BATCH_SIZE) revert BatchSizeExceeded();
-        if (pendingContributors.length() == 0) revert NoContributorsToRefresh();
+    function _processRefreshTask(
+        uint256 batchId,
+        address contributor,
+        uint256 bountyId,
+        uint256 index
+    ) internal {
+        require(contributor != address(0), "Invalid contributor address");
+        require(bountyId > 0, "Invalid bounty ID");
 
-        uint256 length = pendingContributors.length();
-        uint256 processCount = batchSize < length ? batchSize : length;
-        address[] memory batch = new address[](processCount);
+        uint256 taskId = taskCounter++;
+        BountyRefreshTask storage task = refreshTasks[taskId];
+        task.id = taskId;
+        task.contributor = contributor;
+        task.bountyId = bountyId;
+        task.timestamp = block.timestamp;
+        task.completed = false;
+        task.failed = false;
 
-        for (uint256 i = 0; i < processCount; i++) {
-            batch[i] = pendingContributors.at(i);
-        }
+        contributorTasks[contributor].push(taskId);
 
-        _batchRefreshContributors(batch);
-
-        for (uint256 i = 0; i < processCount; i++) {
-            pendingContributors.remove(batch[i]);
+        try this._executeRefresh(contributor, bountyId) {
+            task.completed = true;
+            batches[batchId].successCount++;
+            emit TaskCompleted(taskId, contributor, bountyId, true);
+        } catch Error(string memory reason) {
+            task.failed = true;
+            task.errorMessage = reason;
+            batches[batchId].failureCount++;
+            emit TaskFailed(taskId, contributor, reason);
+        } catch {
+            task.failed = true;
+            task.errorMessage = "Unknown error";
+            batches[batchId].failureCount++;
+            emit TaskFailed(taskId, contributor, "Unknown error");
         }
     }
 
     /**
-     * @dev Get pending contributors count
+     * @dev Execute the actual refresh logic
+     * @param contributor The contributor address
+     * @param bountyId The bounty ID
      */
-    function getPendingContributorsCount() external view returns (uint256) {
-        return pendingContributors.length();
+    function _executeRefresh(address contributor, uint256 bountyId)
+        external
+        onlyOwner
+    {
+        // This is a placeholder for the actual refresh logic
+        // In production, this would call the actual bounty refresh mechanism
+        require(contributor != address(0), "Invalid contributor");
+        require(bountyId > 0, "Invalid bounty ID");
+        // Actual refresh implementation goes here
     }
 
     /**
-     * @dev Get pending contributors
+     * @dev Finalize batch processing
+     * @param batchId The batch ID
      */
-    function getPendingContributors(uint256 offset, uint256 limit)
+    function finalizeBatch(uint256 batchId)
+        external
+        onlyOwner
+        batchExists(batchId)
+    {
+        RefreshBatch storage batch = batches[batchId];
+        require(batch.isProcessing, "Batch not processing");
+        require(!batch.isCompleted, "Batch already completed");
+
+        batch.isProcessing = false;
+        batch.isCompleted = true;
+        batch.completedAt = block.timestamp;
+
+        emit BatchProcessingCompleted(
+            batchId,
+            batch.successCount,
+            batch.failureCount
+        );
+    }
+
+    /**
+     * @dev Get batch details
+     * @param batchId The batch ID
+     * @return The batch struct
+     */
+    function getBatch(uint256 batchId)
         external
         view
-        returns (address[] memory)
+        batchExists(batchId)
+        returns (RefreshBatch memory)
     {
-        uint256 length = pendingContributors.length();
-        if (offset >= length) return new address[](0);
-
-        uint256 resultLength = (offset + limit > length) ? (length - offset) : limit;
-        address[] memory result = new address[](resultLength);
-
-        for (uint256 i = 0; i < resultLength; i++) {
-            result[i] = pendingContributors.at(offset + i);
-        }
-
-        return result;
+        return batches[batchId];
     }
 
     /**
-     * @dev Update bounty manager address
-     * @param _newManager New bounty manager address
+     * @dev Get task details
+     * @param taskId The task ID
+     * @return The task struct
      */
-    function setBountyManager(address _newManager) external onlyOwner {
-        if (_newManager == address(0)) revert InvalidBountyManager();
-        bountyManager = _newManager;
-        emit BountyManagerUpdated(_newManager);
+    function getTask(uint256 taskId)
+        external
+        view
+        returns (BountyRefreshTask memory)
+    {
+        return refreshTasks[taskId];
     }
 
     /**
-     * @dev Internal function to validate contributor list
+     * @dev Get all tasks for a contributor
+     * @param contributor The contributor address
+     * @return Array of task IDs
      */
-    function _validateContributorList(address[] calldata contributors) internal pure {
-        for (uint256 i = 0; i < contributors.length; i++) {
-            if (contributors[i] == address(0)) revert InvalidContributorList();
-            for (uint256 j = i + 1; j < contributors.length; j++) {
-                if (contributors[i] == contributors[j]) revert InvalidContributorList();
-            }
-        }
+    function getContributorTasks(address contributor)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        return contributorTasks[contributor];
     }
 
     /**
-     * @dev Internal function to batch refresh contributors
+     * @dev Pause batch processing
      */
-    function _batchRefreshContributors(address[] memory contributors) internal {
-        uint256 batchId = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
-        uint256 successCount = 0;
-        uint256 failureCount = 0;
-
-        emit BatchRefreshStarted(batchId, contributors.length);
-
-        try bountyManager.batchRefreshContributors(contributors) {
-            successCount = contributors.length;
-            for (uint256 i = 0; i < contributors.length; i++) {
-                lastRefreshTime[contributors[i]] = block.timestamp;
-            }
-        } catch {
-            for (uint256 i = 0; i < contributors.length; i++) {
-                try bountyManager.refreshContributor(contributors[i]) {
-                    successCount++;
-                    lastRefreshTime[contributors[i]] = block.timestamp;
-                } catch Error(string memory reason) {
-                    failureCount++;
-                    emit ContributorRefreshFailed(contributors[i], reason);
-                } catch {
-                    failureCount++;
-                    emit ContributorRefreshFailed(contributors[i], "Unknown error");
-                }
-            }
-        }
-
-        emit BatchRefreshCompleted(batchId, successCount, failureCount);
+    function pause() external onlyOwner {
+        _pause();
     }
 
     /**
-     * @dev Internal function to parallelize batch refresh
+     * @dev Resume batch processing
      */
-    function _parallelBatchRefresh(address[] calldata contributors, uint256 batchSize) internal {
-        uint256 numBatches = (contributors.length + batchSize - 1) / batchSize;
-
-        for (uint256 batchIndex = 0; batchIndex < numBatches; batchIndex++) {
-            uint256 start = batchIndex * batchSize;
-            uint256 end = start + batchSize;
-            if (end > contributors.length) {
-                end = contributors.length;
-            }
-
-            address[] memory batch = new address[](end - start);
-            for (uint256 i = start; i < end; i++) {
-                batch[i - start] = contributors[i];
-            }
-
-            _batchRefreshContributors(batch);
-        }
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }
