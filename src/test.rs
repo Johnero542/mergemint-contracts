@@ -412,6 +412,26 @@ fn test_claim_bounty() {
 }
 
 #[test]
+#[should_panic(expected = "creator cannot claim")]
+fn test_creator_cannot_claim_own_bounty() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_1"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+    client.claim_bounty(&creator, &bounty_id);
+}
+
+#[test]
 fn test_bounty_count() {
     let (env, creator, _contributor, _verifier) = setup_test();
     let contract_id = env.register(MergeMintContract, ());
