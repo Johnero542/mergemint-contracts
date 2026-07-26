@@ -151,7 +151,7 @@ impl MergeMintContract {
         }
 
         if bounty.min_reputation > 0 && contrib.reputation < bounty.min_reputation {
-            panic!("contributor reputation is too low");
+            fail(ContractError::ReputationTooLow);
         }
 
         // For single-assignee bounties the sole claimant gets 10 000 basis points (100%).
@@ -222,7 +222,7 @@ impl MergeMintContract {
         // Depends on claim_bounty having written STATUS_IN_PROGRESS and
         // complete_bounty writing STATUS_COMPLETED below (checks-effects-interactions).
         if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
-            panic!("{}", errors::BOUNTY_NOT_IN_PROGRESS);
+            fail(ContractError::BountyNotInProgress);
         }
 
         if bounty.assignees.is_empty() {
@@ -235,7 +235,7 @@ impl MergeMintContract {
         // reputation and, once escrow is introduced, drain contract funds unilaterally.
         for (assignee, _) in bounty.assignees.iter() {
             if assignee == verifier {
-                panic!("verifier cannot be the assignee");
+                fail(ContractError::VerifierCannotBeAssignee);
             }
         }
 

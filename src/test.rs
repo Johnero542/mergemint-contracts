@@ -294,7 +294,7 @@ fn test_contract_error_messages() {
     assert_eq!(message(ContractError::BountyNotOpen), "bounty not open");
     assert_eq!(
         message(ContractError::BountyNotInProgress),
-        "bounty not in progress"
+        "bounty is not in progress"
     );
     assert_eq!(
         message(ContractError::BountyHasNoAssignee),
