@@ -94,6 +94,13 @@ impl MergeMintContract {
             fail(ContractError::TooManyTags);
         }
 
+        // Reject deadlines already in the past at creation time.
+        if let Some(deadline) = deadline {
+            if env.ledger().sequence() > deadline {
+                fail(ContractError::BountyDeadlinePassed);
+            }
+        }
+
         creator.require_auth();
 
         let count = storage::get_bounty_count(&env);
@@ -307,11 +314,11 @@ impl MergeMintContract {
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
             Some(b) => b,
-            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+            None => fail(ContractError::BountyNotFound),
         };
 
         if bounty.assignees.is_empty() {
-            panic!("{}", errors::BOUNTY_HAS_NO_ASSIGNEE);
+            fail(ContractError::BountyHasNoAssignee);
         }
 
         // If no required_verifiers list is set, fall back to immediate single-verifier completion.
@@ -323,7 +330,7 @@ impl MergeMintContract {
         let required = bounty.required_verifiers.clone().unwrap();
         let is_authorized = required.iter().any(|v| v == verifier);
         if !is_authorized {
-            panic!("{}", errors::VERIFIER_NOT_AUTHORIZED);
+            fail(ContractError::VerifierNotAuthorized);
         }
 
         let mut approvals = storage::get_approvals(&env, &bounty_id);
@@ -331,7 +338,7 @@ impl MergeMintContract {
         // Guard against duplicate votes from the same verifier.
         let already_voted = approvals.iter().any(|v| v == verifier);
         if already_voted {
-            panic!("{}", errors::ALREADY_APPROVED);
+            fail(ContractError::AlreadyApproved);
         }
 
         approvals.push_back(verifier.clone());
@@ -405,16 +412,16 @@ impl MergeMintContract {
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
             Some(b) => b,
-            None => panic!("{}", errors::BOUNTY_NOT_FOUND),
+            None => fail(ContractError::BountyNotFound),
         };
 
         if bounty.status != Symbol::new(&env, STATUS_DISPUTED) {
-            panic!("{}", errors::BOUNTY_NOT_DISPUTED);
+            fail(ContractError::BountyNotDisputed);
         }
 
         // The arbitrator must be the bounty creator; there is no separate admin address.
         if arbitrator != bounty.creator {
-            panic!("{}", errors::NOT_ARBITRATOR);
+            fail(ContractError::NotArbitrator);
         }
 
         let resolve_complete = Symbol::new(&env, "complete");
@@ -549,11 +556,14 @@ impl MergeMintContract {
     pub fn expire_bounty(env: Env, caller: Address, bounty_id: BountyId) {
         caller.require_auth();
 
-        let mut bounty = storage::get_bounty(&env, &bounty_id).expect("bounty not found");
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => fail(ContractError::BountyNotFound),
+        };
 
         let deadline = match bounty.deadline {
             Some(d) => d,
-            None => panic!("{}", errors::BOUNTY_NO_DEADLINE),
+            None => fail(ContractError::BountyNoDeadline),
         };
 
         if env.ledger().sequence() <= deadline {
