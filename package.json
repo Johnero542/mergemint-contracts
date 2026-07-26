@@ -1,0 +1,12 @@
+{
+  "name": "mergemint-monorepo",
+  "private": true,
+  "workspaces": [
+    "mergemint-contracts/sdk",
+    "mergemint-frontend"
+  ],
+  "scripts": {
+    "build:sdk": "npm run build --workspace=mergemint-contracts/sdk",
+    "dev:frontend": "npm run dev --workspace=mergemint-frontend"
+  }
+}
