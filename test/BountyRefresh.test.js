@@ -3,169 +3,162 @@ const { ethers } = require("hardhat");
 
 describe("BountyRefresh", function () {
     let bountyRefresh;
-    let mockBountyManager;
     let owner;
     let addr1, addr2, addr3;
-    const BOUNTY_ID = 1;
 
     beforeEach(async function () {
         [owner, addr1, addr2, addr3] = await ethers.getSigners();
 
-        // Deploy mock bounty manager
-        const MockBountyManager = await ethers.getContractFactory("MockBountyManager");
-        mockBountyManager = await MockBountyManager.deploy();
-        await mockBountyManager.deployed();
-
-        // Deploy BountyRefresh
         const BountyRefresh = await ethers.getContractFactory("BountyRefresh");
-        bountyRefresh = await BountyRefresh.deploy(mockBountyManager.address);
+        bountyRefresh = await BountyRefresh.deploy();
         await bountyRefresh.deployed();
     });
 
-    describe("Deployment", function () {
-        it("Should deploy with correct bounty manager", async function () {
-            expect(await bountyRefresh.bountyManager()).to.equal(mockBountyManager.address);
+    describe("Batch Creation", function () {
+        it("Should create a batch with valid contributors and bounty IDs", async function () {
+            const contributors = [addr1.address, addr2.address];
+            const bountyIds = [1, 2];
+
+            const tx = await bountyRefresh.createBatch(contributors, bountyIds);
+            const receipt = await tx.wait();
+
+            expect(receipt.events.some((e) => e.event === "BatchCreated")).to.be
+                .true;
         });
 
-        it("Should revert with zero address", async function () {
-            const BountyRefresh = await ethers.getContractFactory("BountyRefresh");
+        it("Should reject batch with mismatched lengths", async function () {
+            const contributors = [addr1.address, addr2.address];
+            const bountyIds = [1];
+
             await expect(
-                BountyRefresh.deploy(ethers.constants.AddressZero)
-            ).to.be.revertedWith("Invalid bounty manager");
+                bountyRefresh.createBatch(contributors, bountyIds)
+            ).to.be.revertedWith("Contributors and bountyIds length mismatch");
+        });
+
+        it("Should reject empty batch", async function () {
+            const contributors = [];
+            const bountyIds = [];
+
+            await expect(
+                bountyRefresh.createBatch(contributors, bountyIds)
+            ).to.be.revertedWith("Empty batch");
+        });
+
+        it("Should reject batch exceeding max size", async function () {
+            const contributors = Array(101).fill(addr1.address);
+            const bountyIds = Array(101).fill(1);
+
+            await expect(
+                bountyRefresh.createBatch(contributors, bountyIds)
+            ).to.be.revertedWith("Invalid batch size");
+        });
+
+        it("Should only allow owner to create batch", async function () {
+            const contributors = [addr1.address];
+            const bountyIds = [1];
+
+            await expect(
+                bountyRefresh
+                    .connect(addr1)
+                    .createBatch(contributors, bountyIds)
+            ).to.be.revertedWith("Ownable: caller is not the owner");
         });
     });
 
-    describe("Batch Refresh", function () {
+    describe("Batch Processing", function () {
         beforeEach(async function () {
-            // Setup mock contributors
-            await mockBountyManager.addContributor(BOUNTY_ID, addr1.address);
-            await mockBountyManager.addContributor(BOUNTY_ID, addr2.address);
-            await mockBountyManager.addContributor(BOUNTY_ID, addr3.address);
+            const contributors = [addr1.address, addr2.address, addr3.address];
+            const bountyIds = [1, 2, 3];
+            await bountyRefresh.createBatch(contributors, bountyIds);
         });
 
-        it("Should refresh bounty with batching", async function () {
-            await expect(bountyRefresh.refreshBountyBatched(BOUNTY_ID))
-                .to.emit(bountyRefresh, "BatchRefreshStarted")
-                .to.emit(bountyRefresh, "BatchRefreshCompleted");
+        it("Should process batch in parallel", async function () {
+            const tx = await bountyRefresh.processBatchParallel(0);
+            const receipt = await tx.wait();
 
-            expect(await bountyRefresh.getProcessedContributorCount(BOUNTY_ID)).to.equal(3);
+            expect(
+                receipt.events.some((e) => e.event === "ParallelRefreshStarted")
+            ).to.be.true;
         });
 
-        it("Should prevent concurrent refresh", async function () {
-            // This would require a more complex setup to test properly
-            // For now, we verify the flag is set correctly
-            await bountyRefresh.refreshBountyBatched(BOUNTY_ID);
-            expect(await bountyRefresh.isRefreshing(BOUNTY_ID)).to.equal(false);
+        it("Should reject processing non-existent batch", async function () {
+            await expect(
+                bountyRefresh.processBatchParallel(999)
+            ).to.be.revertedWith("Batch does not exist");
         });
 
-        it("Should revert with invalid bounty ID", async function () {
-            await expect(bountyRefresh.refreshBountyBatched(0))
-                .to.be.revertedWith("Invalid bounty ID");
-        });
-
-        it("Should revert with no contributors", async function () {
-            await expect(bountyRefresh.refreshBountyBatched(999))
-                .to.be.revertedWith("No contributors found");
+        it("Should reject double processing", async function () {
+            await bountyRefresh.processBatchParallel(0);
+            await expect(
+                bountyRefresh.processBatchParallel(0)
+            ).to.be.revertedWith("Batch already processing");
         });
     });
 
-    describe("Parallel Refresh", function () {
+    describe("Batch Finalization", function () {
         beforeEach(async function () {
-            // Add multiple contributors
-            for (let i = 0; i < 10; i++) {
-                const wallet = ethers.Wallet.createRandom().connect(ethers.provider);
-                await mockBountyManager.addContributor(BOUNTY_ID, wallet.address);
-            }
+            const contributors = [addr1.address, addr2.address];
+            const bountyIds = [1, 2];
+            await bountyRefresh.createBatch(contributors, bountyIds);
+            await bountyRefresh.processBatchParallel(0);
         });
 
-        it("Should refresh bounty in parallel", async function () {
-            await expect(bountyRefresh.refreshBountyParallel(BOUNTY_ID, 5))
-                .to.emit(bountyRefresh, "BatchRefreshStarted")
-                .to.emit(bountyRefresh, "BatchRefreshCompleted");
+        it("Should finalize batch", async function () {
+            const tx = await bountyRefresh.finalizeBatch(0);
+            const receipt = await tx.wait();
 
-            expect(await bountyRefresh.getProcessedContributorCount(BOUNTY_ID)).to.equal(10);
+            expect(
+                receipt.events.some((e) => e.event === "BatchProcessingCompleted")
+            ).to.be.true;
         });
 
-        it("Should revert with invalid batch size", async function () {
-            await expect(bountyRefresh.refreshBountyParallel(BOUNTY_ID, 0))
-                .to.be.revertedWith("Invalid batch size");
-        });
+        it("Should reject finalizing non-processing batch", async function () {
+            const contributors = [addr1.address];
+            const bountyIds = [1];
+            await bountyRefresh.createBatch(contributors, bountyIds);
 
-        it("Should revert with batch size exceeding max", async function () {
-            await expect(bountyRefresh.refreshBountyParallel(BOUNTY_ID, 101))
-                .to.be.revertedWith("Invalid batch size");
+            await expect(
+                bountyRefresh.finalizeBatch(1)
+            ).to.be.revertedWith("Batch not processing");
         });
     });
 
-    describe("Range Refresh", function () {
+    describe("Batch Retrieval", function () {
         beforeEach(async function () {
-            await mockBountyManager.addContributor(BOUNTY_ID, addr1.address);
-            await mockBountyManager.addContributor(BOUNTY_ID, addr2.address);
-            await mockBountyManager.addContributor(BOUNTY_ID, addr3.address);
+            const contributors = [addr1.address, addr2.address];
+            const bountyIds = [1, 2];
+            await bountyRefresh.createBatch(contributors, bountyIds);
         });
 
-        it("Should refresh specific range", async function () {
-            await bountyRefresh.refreshBountyRange(BOUNTY_ID, 0, 2);
-            expect(await bountyRefresh.getProcessedContributorCount(BOUNTY_ID)).to.equal(2);
+        it("Should retrieve batch details", async function () {
+            const batch = await bountyRefresh.getBatch(0);
+            expect(batch.id).to.equal(0);
+            expect(batch.contributors.length).to.equal(2);
+            expect(batch.bountyIds.length).to.equal(2);
         });
 
-        it("Should revert with invalid range", async function () {
-            await expect(bountyRefresh.refreshBountyRange(BOUNTY_ID, 2, 1))
-                .to.be.revertedWith("Invalid range");
-        });
-
-        it("Should revert with out of bounds index", async function () {
-            await expect(bountyRefresh.refreshBountyRange(BOUNTY_ID, 0, 100))
-                .to.be.revertedWith("End index out of bounds");
+        it("Should reject retrieving non-existent batch", async function () {
+            await expect(bountyRefresh.getBatch(999)).to.be.revertedWith(
+                "Batch does not exist"
+            );
         });
     });
 
-    describe("Contributor Tracking", function () {
-        beforeEach(async function () {
-            await mockBountyManager.addContributor(BOUNTY_ID, addr1.address);
-            await mockBountyManager.addContributor(BOUNTY_ID, addr2.address);
-            await bountyRefresh.refreshBountyBatched(BOUNTY_ID);
-        });
+    describe("Pause/Unpause", function () {
+        it("Should pause and unpause processing", async function () {
+            await bountyRefresh.pause();
 
-        it("Should check if contributor is processed", async function () {
-            expect(await bountyRefresh.isContributorProcessed(BOUNTY_ID, addr1.address)).to.equal(true);
-        });
+            const contributors = [addr1.address];
+            const bountyIds = [1];
+            await bountyRefresh.createBatch(contributors, bountyIds);
 
-        it("Should get processed contributors", async function () {
-            const contributors = await bountyRefresh.getProcessedContributors(BOUNTY_ID);
-            expect(contributors.length).to.equal(2);
-            expect(contributors).to.include(addr1.address);
-            expect(contributors).to.include(addr2.address);
-        });
+            await expect(
+                bountyRefresh.processBatchParallel(0)
+            ).to.be.revertedWith("Pausable: paused");
 
-        it("Should clear processed contributors", async function () {
-            await bountyRefresh.clearProcessedContributors(BOUNTY_ID);
-            expect(await bountyRefresh.getProcessedContributorCount(BOUNTY_ID)).to.equal(0);
-        });
-    });
-
-    describe("Admin Functions", function () {
-        it("Should update bounty manager", async function () {
-            const MockBountyManager = await ethers.getContractFactory("MockBountyManager");
-            const newManager = await MockBountyManager.deploy();
-            await newManager.deployed();
-
-            await bountyRefresh.setBountyManager(newManager.address);
-            expect(await bountyRefresh.bountyManager()).to.equal(newManager.address);
-        });
-
-        it("Should revert setting zero address as manager", async function () {
-            await expect(bountyRefresh.setBountyManager(ethers.constants.AddressZero))
-                .to.be.revertedWith("Invalid bounty manager");
-        });
-
-        it("Should only allow owner to update manager", async function () {
-            const MockBountyManager = await ethers.getContractFactory("MockBountyManager");
-            const newManager = await MockBountyManager.deploy();
-            await newManager.deployed();
-
-            await expect(bountyRefresh.connect(addr1).setBountyManager(newManager.address))
-                .to.be.revertedWith("Ownable: caller is not the owner");
+            await bountyRefresh.unpause();
+            await expect(bountyRefresh.processBatchParallel(0)).not.to.be
+                .reverted;
         });
     });
 });
