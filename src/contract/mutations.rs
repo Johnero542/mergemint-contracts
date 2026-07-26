@@ -4,6 +4,10 @@ const STATUS_COMPLETED: &str = "completed";
 const STATUS_CANCELLED: &str = "cancelled";
 const STATUS_DISPUTED: &str = "disputed";
 
+/// Minimum `reward_amount` (raw token units) accepted by `create_bounty`.
+/// Guards against reputation-farming via trivial-value bounties.
+const MIN_REWARD_AMOUNT: i128 = 1_000;
+
 fn generate_bounty_id(env: &Env, count: u64) -> BountyId {
     let mut buf = [0u8; 32];
     let count_bytes = count.to_be_bytes();
@@ -22,7 +26,7 @@ impl MergeMintContract {
     /// * `creator` - Wallet that will own and manage this bounty.
     /// * `title` - Short human-readable title (max 32 chars via `Symbol`).
     /// * `description` - Longer description of the work required.
-    /// * `reward_amount` - Raw token units for the reward. Must be positive.
+    /// * `reward_amount` - Raw token units for the reward. Must be at least `MIN_REWARD_AMOUNT`.
     /// * `reward_token` - Soroban token contract address used for payout.
     /// * `min_reputation` - Minimum reputation score required to claim (0 = no minimum).
     /// * `deadline` - Optional ledger sequence deadline after which the bounty cannot be claimed.
@@ -33,6 +37,7 @@ impl MergeMintContract {
     ///
     /// # Panics
     /// * If `reward_amount` is not strictly positive.
+    /// * If `reward_amount` is below `MIN_REWARD_AMOUNT` (`ContractError::RewardBelowMinimum`).
     /// * If `tags.len() > 5` (`ContractError::TooManyTags`).
     ///
     /// # Authorization
@@ -52,6 +57,10 @@ impl MergeMintContract {
         // reward is a malformed request regardless of who is asking.
         if reward_amount <= 0 {
             fail(ContractError::RewardMustBePositive);
+        }
+
+        if reward_amount < MIN_REWARD_AMOUNT {
+            fail(ContractError::RewardBelowMinimum);
         }
 
         // Validate tags length before auth to fail fast on malformed input.
