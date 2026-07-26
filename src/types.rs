@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, String, Symbol, Vec};
 
 /// A type-safe identifier for a bounty.
 ///
@@ -31,12 +31,14 @@ pub enum DataKey {
     Contributor(Address),
     ContributorBounties(Address),
     StatusIndex(Symbol),
+    StatusCount(Symbol),
     OpenBounties,
     Approvals(BountyId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
+// TODO(#427): unused until milestone-based partial bounty completion lands
 pub struct Milestone {
     pub description: Symbol,
     pub reward: i128,
@@ -51,7 +53,6 @@ pub struct Bounty {
     pub reward_token: Address,
     pub assignees: Vec<(Address, u32)>,
     pub max_assignees: u32,
-    #[allow(dead_code)]
     pub status: Symbol,
     pub min_reputation: u32,
     pub deadline: Option<u32>,
@@ -72,7 +73,7 @@ pub struct Bounty {
 #[contracttype]
 pub struct BountyMeta {
     pub title: Symbol,
-    pub description: Symbol,
+    pub description: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

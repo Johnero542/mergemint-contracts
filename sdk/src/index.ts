@@ -10,54 +10,20 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 
-// === Types
-
-export interface NetworkConfig {
-  rpcUrl: string;
-  networkPassphrase: string;
-  contractId: string;
-}
+export * from "./types";
+import { NetworkConfig, Bounty, BountyMeta, Contributor, CreateBountyParams } from "./types";
 
 export const TESTNET: Omit<NetworkConfig, "contractId"> = {
   rpcUrl: "https://soroban-testnet.stellar.org",
   networkPassphrase: Networks.TESTNET,
 };
 
+const MAINNET_RPC_PLACEHOLDER_PATTERN = /\/v1\/XCa\.\.\.$/;
+
 export const MAINNET: Omit<NetworkConfig, "contractId"> = {
   rpcUrl: "https://mainnet.stellar.validationcloud.io/v1/XCa...",
   networkPassphrase: Networks.PUBLIC,
 };
-
-export interface Bounty {
-  creator: string;
-  rewardAmount: bigint;
-  rewardToken: string;
-  assignees: Array<{ address: string; shareBp: number }>;
-  maxAssignees: number;
-  status: string;
-  minReputation: number;
-  deadline: number | null;
-}
-
-export interface BountyMeta {
-  title: string;
-  description: string;
-}
-
-export interface Contributor {
-  address: string;
-  reputation: number;
-  totalEarned: bigint;
-  contributionCount: number;
-  activeClaims: number;
-  metadata: string | null;
-}
-
-export interface CreateBountyParams {
-  creator: string;
-  title: string;
-  description: string;
-  rewardAmount: bigint;
   rewardToken: string;
   minReputation: number;
   deadline: number | null;
@@ -70,6 +36,9 @@ function addressToScVal(address: string): xdr.ScVal {
 }
 
 function symbolToScVal(value: string): xdr.ScVal {
+  if (value.length > 32) {
+    throw new Error(`value exceeds 32-character Symbol limit: ${value}`);
+  }
   return nativeToScVal(value, { type: "symbol" });
 }
 
@@ -142,6 +111,9 @@ export class MergeMintSDK {
   private readonly contractId: string;
 
   constructor(config: NetworkConfig) {
+    if (config.rpcUrl.includes("XCa...") || config.rpcUrl.includes("...")) {
+      throw new Error("Invalid RPC URL: placeholder detected in configuration. Please provide a valid Soroban RPC provider URL.");
+    }
     this.rpc = new SorobanRpc.Server(config.rpcUrl);
     this.contract = new Contract(config.contractId);
     this.networkPassphrase = config.networkPassphrase;
@@ -178,7 +150,7 @@ export class MergeMintSDK {
   async getBountyCount(): Promise<bigint> {
     const result = await this.simulateReadCall("get_bounty_count", []);
     if (!result) return 0n;
-    return BigInt(scValToNative(result) as string);
+    return BigInt(scValToNative(result) as string | number | bigint);
   }
 
   async getOpenBounties(): Promise<string[]> {
