@@ -18,6 +18,8 @@ export const TESTNET: Omit<NetworkConfig, "contractId"> = {
   networkPassphrase: Networks.TESTNET,
 };
 
+const MAINNET_RPC_PLACEHOLDER_PATTERN = /\/v1\/XCa\.\.\.$/;
+
 export const MAINNET: Omit<NetworkConfig, "contractId"> = {
   rpcUrl: "https://mainnet.stellar.validationcloud.io/v1/XCa...",
   networkPassphrase: Networks.PUBLIC,
