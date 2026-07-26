@@ -19,6 +19,14 @@ impl MergeMintContract {
         storage::get_bounty_count(&env)
     }
 
+    pub fn get_bounties(env: Env, ids: Vec<BountyId>) -> Vec<Option<Bounty>> {
+        let mut result = Vec::new(&env);
+        for id in ids.iter() {
+            result.push_back(storage::get_bounty(&env, &id));
+        }
+        result
+    }
+
     pub fn get_bounties_by_status(env: Env, status: Symbol) -> Vec<BountyId> {
         storage::get_bounties_by_status(&env, &status)
     }

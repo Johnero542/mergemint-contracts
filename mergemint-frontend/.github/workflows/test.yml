@@ -1,0 +1,38 @@
+name: Frontend Test
+
+on:
+  push:
+    paths:
+      - 'mergemint-frontend/**'
+  pull_request:
+    paths:
+      - 'mergemint-frontend/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mergemint-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mergemint-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Enable once test suite lands (issues #75/#106)
+      # - name: Test
+      #   run: npm test
+
+      - name: Build
+        run: npm run build

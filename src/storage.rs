@@ -72,15 +72,22 @@ pub fn get_bounty(env: &Env, id: &BountyId) -> Option<Bounty> {
 }
 
 pub fn store_bounty_meta(env: &Env, id: &BountyId, meta: &BountyMeta) {
+    let key = DataKey::BountyMeta(id.clone());
+    env.storage().persistent().set(&key, meta);
     env.storage()
-        .temporary()
-        .set(&DataKey::BountyMeta(id.clone()), meta);
+        .persistent()
+        .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
 }
 
 pub fn get_bounty_meta(env: &Env, id: &BountyId) -> Option<BountyMeta> {
-    env.storage()
-        .temporary()
-        .get(&DataKey::BountyMeta(id.clone()))
+    let key = DataKey::BountyMeta(id.clone());
+    let meta: Option<BountyMeta> = env.storage().persistent().get(&key);
+    if meta.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
+    }
+    meta
 }
 
 pub fn store_contributor(env: &Env, address: &Address, contributor: &Contributor) {
@@ -153,16 +160,22 @@ pub fn move_bounty_status(
 }
 
 pub fn get_approvals(env: &Env, bounty_id: &BountyId) -> Vec<Address> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Approvals(bounty_id.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+    let key = DataKey::Approvals(bounty_id.clone());
+    let result: Option<Vec<Address>> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
+    }
+    result.unwrap_or_else(|| Vec::new(env))
 }
 
 pub fn set_approvals(env: &Env, bounty_id: &BountyId, approvals: &Vec<Address>) {
+    let key = DataKey::Approvals(bounty_id.clone());
+    env.storage().persistent().set(&key, approvals);
     env.storage()
         .persistent()
-        .set(&DataKey::Approvals(bounty_id.clone()), approvals);
+        .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
 }
 
 pub fn get_open_bounties(env: &Env) -> Vec<BountyId> {
