@@ -1,8 +1,6 @@
 # Security: Enforce Minimum Reputation Threshold
 
-## Issue
-No minimum reputation for claimers.
+**Status**: Implemented in contract (see [docs/security.md](../docs/security.md) Threat #1).
 
-## Fix
-- Add reputation check before claim
-- Configurable threshold
+## Summary
+The `min_reputation` check is fully enforced during `claim_bounty` calls to prevent unverified accounts from claiming high-value tasks.
