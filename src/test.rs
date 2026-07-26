@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    token::StellarAssetClient,
+    Address, Env, Symbol, Vec,
+};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -38,6 +42,42 @@ fn make_bounty(
         &deadline,
         &Vec::new(env),
     )
+}
+
+/// Create a Stellar Asset Contract token and mint `amount` to `to`.
+/// Returns the token contract address.
+fn create_token_and_mint(env: &Env, admin: &Address, to: &Address, amount: i128) -> Address {
+    let sac = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_addr = sac.address();
+    let token_admin = StellarAssetClient::new(env, &token_addr);
+    token_admin.mint(to, &amount);
+    token_addr
+}
+
+/// Create a bounty using a real token contract with `reward_amount` minted to the contract.
+/// Returns both the bounty ID and the token address.
+fn make_bounty_with_token(
+    client: &MergeMintContractClient,
+    env: &Env,
+    creator: &Address,
+    contract_id: &Address,
+    tag: &str,
+    reward_amount: i128,
+    deadline: Option<u32>,
+) -> (crate::types::BountyId, Address) {
+    // Use creator as token admin for simplicity (mock-all-auths applies).
+    let token_addr = create_token_and_mint(env, creator, contract_id, reward_amount);
+    let bounty_id = client.create_bounty(
+        creator,
+        &Symbol::new(env, tag),
+        &Symbol::new(env, "desc"),
+        &reward_amount,
+        &token_addr,
+        &0,
+        &deadline,
+        &Vec::new(env),
+    );
+    (bounty_id, token_addr)
 }
 
 // ===========================================================================
@@ -521,7 +561,9 @@ fn test_status_index_moves_on_cancel() {
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
-    let bounty_id = make_bounty(&client, &env, &creator, "bounty_z", None);
+    let (bounty_id, _token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "bounty_z", 1000, None,
+    );
     client.cancel_bounty(&creator, &bounty_id);
 
     let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
@@ -616,4 +658,118 @@ fn test_assignee_cannot_self_verify() {
 
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 36 — Escrow refund on cancel / expire / dispute-resolve(cancel)
+// ===========================================================================
+
+/// cancel_bounty refunds the escrowed reward to the creator.
+#[test]
+fn test_cancel_bounty_refunds_escrow() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 1000;
+    let (bounty_id, token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "refund_cancel", reward_amount, None,
+    );
+
+    // Check contract balance before cancel.
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&contract_id),
+        reward_amount,
+        "contract holds the escrowed reward before cancel"
+    );
+
+    client.cancel_bounty(&creator, &bounty_id);
+
+    // After cancel, the contract balance is 0 (all refunded to creator).
+    assert_eq!(
+        token_client.balance(&contract_id),
+        0,
+        "contract balance is zero after refund"
+    );
+    // The creator received the refund.
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "creator received the refunded reward"
+    );
+}
+
+/// expire_bounty refunds the escrowed reward to the creator.
+#[test]
+fn test_expire_bounty_refunds_escrow() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Use deadline = 0 and set ledger sequence past it so the bounty is expired.
+    let reward_amount: i128 = 1000;
+    env.ledger().set_sequence_number(100);
+    let (bounty_id, token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "refund_expire", reward_amount, Some(0),
+    );
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&contract_id),
+        reward_amount,
+        "contract holds the escrowed reward before expire"
+    );
+
+    // Any caller can trigger expiry.
+    let caller = Address::generate(&env);
+    client.expire_bounty(&caller, &bounty_id);
+
+    assert_eq!(
+        token_client.balance(&contract_id),
+        0,
+        "contract balance is zero after refund"
+    );
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "creator received the refunded reward"
+    );
+}
+
+/// resolve_dispute with "cancel" resolution refunds the escrowed reward to the creator.
+#[test]
+fn test_resolve_dispute_cancel_refunds_escrow() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 1000;
+    let (bounty_id, token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "refund_disp", reward_amount, None,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&contract_id),
+        reward_amount,
+        "contract holds the escrowed reward before dispute resolution"
+    );
+
+    // Resolve with "cancel" — should refund to creator.
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "cancel"));
+
+    assert_eq!(
+        token_client.balance(&contract_id),
+        0,
+        "contract balance is zero after refund"
+    );
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "creator received the refunded reward"
+    );
 }

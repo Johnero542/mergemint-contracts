@@ -452,7 +452,10 @@ impl MergeMintContract {
             storage::store_bounty(&env, &bounty_id, &bounty);
             storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
         } else if resolution == resolve_cancel {
-            // Escrow refund to creator goes here once escrow is implemented.
+            // Refund escrowed reward to creator before mutating status.
+            let token = TokenClient::new(&env, &bounty.reward_token);
+            token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+
             let previous_status = bounty.status.clone();
             bounty.status = Symbol::new(&env, STATUS_CANCELLED);
             storage::store_bounty(&env, &bounty_id, &bounty);
@@ -518,6 +521,10 @@ impl MergeMintContract {
             fail(ContractError::BountyNotOpen);
         }
 
+        // Refund escrowed reward to creator before mutating status.
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
@@ -562,12 +569,15 @@ impl MergeMintContract {
             fail(ContractError::BountyNotOpen);
         }
 
+        // Refund escrowed reward to creator before mutating status.
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
-        // Escrow refund goes here once escrow is implemented.
         events::emit_bounty_expired(&env, &bounty_id, &bounty.creator);
     }
 }
