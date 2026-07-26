@@ -70,6 +70,9 @@ function addressToScVal(address: string): xdr.ScVal {
 }
 
 function symbolToScVal(value: string): xdr.ScVal {
+  if (value.length > 32) {
+    throw new Error(`value exceeds 32-character Symbol limit: ${value}`);
+  }
   return nativeToScVal(value, { type: "symbol" });
 }
 
@@ -142,8 +145,8 @@ export class MergeMintSDK {
   private readonly contractId: string;
 
   constructor(config: NetworkConfig) {
-    if (!config.networkPassphrase || config.networkPassphrase.trim() === "") {
-      throw new Error("Invalid networkPassphrase: value cannot be empty.");
+    if (config.rpcUrl.includes("XCa...") || config.rpcUrl.includes("...")) {
+      throw new Error("Invalid RPC URL: placeholder detected in configuration. Please provide a valid Soroban RPC provider URL.");
     }
     this.rpc = new SorobanRpc.Server(config.rpcUrl);
     this.contract = new Contract(config.contractId);
@@ -181,7 +184,7 @@ export class MergeMintSDK {
   async getBountyCount(): Promise<bigint> {
     const result = await this.simulateReadCall("get_bounty_count", []);
     if (!result) return 0n;
-    return BigInt(scValToNative(result) as string);
+    return BigInt(scValToNative(result) as string | number | bigint);
   }
 
   async getOpenBounties(): Promise<string[]> {
