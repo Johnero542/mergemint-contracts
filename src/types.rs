@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, String, Symbol, Vec};
 
 /// A type-safe identifier for a bounty.
 ///
@@ -72,7 +72,7 @@ pub struct Bounty {
 #[contracttype]
 pub struct BountyMeta {
     pub title: Symbol,
-    pub description: Symbol,
+    pub description: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

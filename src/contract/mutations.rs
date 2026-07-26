@@ -79,7 +79,7 @@ impl MergeMintContract {
         env: Env,
         creator: Address,
         title: Symbol,
-        description: Symbol,
+        description: String,
         reward_amount: i128,
         reward_token: Address,
         min_reputation: u32,
