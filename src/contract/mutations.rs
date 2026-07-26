@@ -395,6 +395,10 @@ impl MergeMintContract {
     /// Resolve a disputed bounty. Only the bounty creator (acting as arbitrator) may call this.
     /// resolution must be the Symbol "complete" (pay assignees) or "cancel" (refund creator).
     ///
+    /// When resolution is "complete", the arbitrator's wallet funds the payout to each assignee
+    /// (mirroring complete_bounty's verifier-funds-the-payout model), since the contract itself
+    /// holds no escrow.
+    ///
     /// # Authorization
     /// `arbitrator.require_auth()` is the **first** operation in this function.
     /// No storage reads or business logic execute before authentication is checked.
@@ -429,7 +433,7 @@ impl MergeMintContract {
             for (assignee, share_bp) in bounty.assignees.iter() {
                 let payout =
                     (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
-                token.transfer(&env.current_contract_address(), &assignee, &payout);
+                token.transfer(&arbitrator, &assignee, &payout);
 
                 let mut contrib = storage::get_contributor(&env, &assignee)
                     .unwrap_or(Contributor {

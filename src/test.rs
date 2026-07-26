@@ -793,3 +793,52 @@ fn test_resolve_dispute_cancel_refunds_escrow() {
         "creator received the refunded reward"
     );
 }
+
+#[test]
+fn test_resolve_dispute_complete_pays_from_arbitrator() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 1000;
+    let token_addr = create_token_and_mint(&env, &creator, &creator, reward_amount);
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "resolve_complete"),
+        &Symbol::new(&env, "desc"),
+        &reward_amount,
+        &token_addr,
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "arbitrator (creator) holds the reward before resolution"
+    );
+    assert_eq!(
+        token_client.balance(&contributor),
+        0,
+        "contributor starts with zero balance"
+    );
+
+    // Resolve with "complete" — arbitrator pays the assignee.
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "complete"));
+
+    assert_eq!(
+        token_client.balance(&creator),
+        0,
+        "arbitrator's balance is zero after paying the assignee"
+    );
+    assert_eq!(
+        token_client.balance(&contributor),
+        reward_amount,
+        "assignee received the full reward from the arbitrator"
+    );
+}
