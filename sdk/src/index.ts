@@ -70,6 +70,9 @@ function addressToScVal(address: string): xdr.ScVal {
 }
 
 function symbolToScVal(value: string): xdr.ScVal {
+  if (value.length > 32) {
+    throw new Error(`value exceeds 32-character Symbol limit: ${value}`);
+  }
   return nativeToScVal(value, { type: "symbol" });
 }
 
