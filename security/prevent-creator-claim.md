@@ -1,8 +1,6 @@
-# Security: Prevent Bounty Creator From Claiming
+# Security: Prevent Creator Self-Claim
 
-## Issue
-Bounty creator could claim their own bounty.
+**Status**: Implemented in contract (see [docs/security.md](../docs/security.md) Threat #2).
 
-## Fix
-- Add `require(creator != msg.sender)` check
-- Validate claimer is not the original funder
+## Summary
+Creator self-claiming is strictly prevented in `claim_bounty` to eliminate wash trading and self-rewarding exploits.
