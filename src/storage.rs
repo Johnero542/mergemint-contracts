@@ -72,15 +72,22 @@ pub fn get_bounty(env: &Env, id: &BountyId) -> Option<Bounty> {
 }
 
 pub fn store_bounty_meta(env: &Env, id: &BountyId, meta: &BountyMeta) {
+    let key = DataKey::BountyMeta(id.clone());
+    env.storage().persistent().set(&key, meta);
     env.storage()
-        .temporary()
-        .set(&DataKey::BountyMeta(id.clone()), meta);
+        .persistent()
+        .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
 }
 
 pub fn get_bounty_meta(env: &Env, id: &BountyId) -> Option<BountyMeta> {
-    env.storage()
-        .temporary()
-        .get(&DataKey::BountyMeta(id.clone()))
+    let key = DataKey::BountyMeta(id.clone());
+    let meta: Option<BountyMeta> = env.storage().persistent().get(&key);
+    if meta.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
+    }
+    meta
 }
 
 pub fn store_contributor(env: &Env, address: &Address, contributor: &Contributor) {
