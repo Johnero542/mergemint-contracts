@@ -155,6 +155,11 @@ impl MergeMintContract {
             None => fail(ContractError::BountyNotFound),
         };
 
+        // The creator of a bounty cannot claim their own bounty.
+        if contributor == bounty.creator {
+            fail(ContractError::CreatorCannotClaim);
+        }
+
         if bounty.assignees.len() >= bounty.max_assignees {
             fail(ContractError::BountyAlreadyAssigned);
         }
@@ -181,7 +186,7 @@ impl MergeMintContract {
         }
 
         if bounty.min_reputation > 0 && contrib.reputation < bounty.min_reputation {
-            panic!("contributor reputation is too low");
+            fail(ContractError::ReputationTooLow);
         }
 
         // For single-assignee bounties the sole claimant gets 10 000 basis points (100%).
@@ -252,7 +257,7 @@ impl MergeMintContract {
         // Depends on claim_bounty having written STATUS_IN_PROGRESS and
         // complete_bounty writing STATUS_COMPLETED below (checks-effects-interactions).
         if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
-            panic!("{}", errors::BOUNTY_NOT_IN_PROGRESS);
+            fail(ContractError::BountyNotInProgress);
         }
 
         if bounty.assignees.is_empty() {
@@ -265,7 +270,7 @@ impl MergeMintContract {
         // reputation and, once escrow is introduced, drain contract funds unilaterally.
         for (assignee, _) in bounty.assignees.iter() {
             if assignee == verifier {
-                panic!("verifier cannot be the assignee");
+                fail(ContractError::VerifierCannotBeAssignee);
             }
         }
 
@@ -383,6 +388,10 @@ impl MergeMintContract {
     /// Resolve a disputed bounty. Only the bounty creator (acting as arbitrator) may call this.
     /// resolution must be the Symbol "complete" (pay assignees) or "cancel" (refund creator).
     ///
+    /// When resolution is "complete", the arbitrator's wallet funds the payout to each assignee
+    /// (mirroring complete_bounty's verifier-funds-the-payout model), since the contract itself
+    /// holds no escrow.
+    ///
     /// # Authorization
     /// `arbitrator.require_auth()` is the **first** operation in this function.
     /// No storage reads or business logic execute before authentication is checked.
@@ -413,17 +422,42 @@ impl MergeMintContract {
 
         if resolution == resolve_complete {
             let token = TokenClient::new(&env, &bounty.reward_token);
-            distribute_payout(
-                &env, &bounty_id, &bounty.assignees,
-                &env.current_contract_address(), &token, bounty.reward_amount,
-            );
+
+            for (assignee, share_bp) in bounty.assignees.iter() {
+                let payout =
+                    (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
+                token.transfer(&arbitrator, &assignee, &payout);
+
+                let mut contrib = storage::get_contributor(&env, &assignee)
+                    .unwrap_or(Contributor {
+                        address: assignee.clone(),
+                        reputation: 0,
+                        total_earned: 0,
+                        contribution_count: 0,
+                        active_claims: 0,
+                        metadata: None,
+                    });
+
+                contrib.reputation += 10;
+                contrib.total_earned += payout;
+                contrib.contribution_count += 1;
+                if contrib.active_claims > 0 {
+                    contrib.active_claims -= 1;
+                }
+
+                storage::store_contributor(&env, &assignee, &contrib);
+                events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+            }
 
             let previous_status = bounty.status.clone();
             bounty.status = Symbol::new(&env, STATUS_COMPLETED);
             storage::store_bounty(&env, &bounty_id, &bounty);
             storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
         } else if resolution == resolve_cancel {
-            // Escrow refund to creator goes here once escrow is implemented.
+            // Refund escrowed reward to creator before mutating status.
+            let token = TokenClient::new(&env, &bounty.reward_token);
+            token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+
             let previous_status = bounty.status.clone();
             bounty.status = Symbol::new(&env, STATUS_CANCELLED);
             storage::store_bounty(&env, &bounty_id, &bounty);
@@ -489,6 +523,10 @@ impl MergeMintContract {
             fail(ContractError::BountyNotOpen);
         }
 
+        // Refund escrowed reward to creator before mutating status.
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
@@ -533,12 +571,15 @@ impl MergeMintContract {
             fail(ContractError::BountyNotOpen);
         }
 
+        // Refund escrowed reward to creator before mutating status.
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
         storage::store_bounty(&env, &bounty_id, &bounty);
         storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
 
-        // Escrow refund goes here once escrow is implemented.
         events::emit_bounty_expired(&env, &bounty_id, &bounty.creator);
     }
 }
