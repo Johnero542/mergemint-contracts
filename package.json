@@ -1,5 +1,5 @@
 {
-  "name": "mergemint",
+  "name": "mergemint-monorepo",
   "private": true,
   "workspaces": [
     "mergemint-contracts/sdk",
