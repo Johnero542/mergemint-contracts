@@ -37,6 +37,7 @@ pub enum DataKey {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
+// TODO(#427): unused until milestone-based partial bounty completion lands
 pub struct Milestone {
     pub description: Symbol,
     pub reward: i128,
@@ -51,7 +52,6 @@ pub struct Bounty {
     pub reward_token: Address,
     pub assignees: Vec<(Address, u32)>,
     pub max_assignees: u32,
-    #[allow(dead_code)]
     pub status: Symbol,
     pub min_reputation: u32,
     pub deadline: Option<u32>,
