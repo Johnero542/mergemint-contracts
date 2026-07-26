@@ -1,8 +1,6 @@
 # Security: Validate Reward Token Address
 
-## Issue
-reward_token address not validated.
+**Status**: Implemented in contract (see [docs/security.md](../docs/security.md) Threat #3).
 
-## Fix
-- Add address(0) check
-- Validate token contract exists
+## Summary
+Reward token contract addresses are validated during bounty creation to prevent zero-address or invalid asset escrow initialization.
