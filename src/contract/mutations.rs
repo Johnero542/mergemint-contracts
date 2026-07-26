@@ -429,14 +429,7 @@ impl MergeMintContract {
                 token.transfer(&arbitrator, &assignee, &payout);
 
                 let mut contrib = storage::get_contributor(&env, &assignee)
-                    .unwrap_or(Contributor {
-                        address: assignee.clone(),
-                        reputation: 0,
-                        total_earned: 0,
-                        contribution_count: 0,
-                        active_claims: 0,
-                        metadata: None,
-                    });
+                    .unwrap_or_else(|| Contributor::new(assignee.clone()));
 
                 contrib.reputation += 10;
                 contrib.total_earned += payout;
