@@ -37,23 +37,23 @@ Contract events emitted for indexer integration.
 ### bounty_cancelled
 - **Topics**: `(Symbol("bounty_cancelled"), creator_address)`
 - **Data**: `bounty_id`
-- **Trigger**: Creator cancels an open bounty
-- **Purpose**: Notify indexer that the bounty is no longer active
+- **Trigger**: Creator cancels bounty
+- **Purpose**: Notify indexer of bounty cancellation
 
 ### bounty_expired
 - **Topics**: `(Symbol("bounty_expired"), creator_address)`
 - **Data**: `bounty_id`
-- **Trigger**: Bounty passes its deadline unresolved
-- **Purpose**: Notify indexer that the bounty has expired
+- **Trigger**: Bounty reaches deadline without completion
+- **Purpose**: Notify indexer of bounty expiration
 
 ### approval_recorded
 - **Topics**: `(Symbol("approval_recorded"), verifier_address)`
 - **Data**: `(bounty_id, approval_count)`
-- **Trigger**: A verifier records approval on a multi-sig bounty
-- **Purpose**: Notify indexer of updated approval progress
+- **Trigger**: Verifier approves completion
+- **Purpose**: Notify indexer of verification progress
 
 ### dispute_resolved
 - **Topics**: `(Symbol("dispute_resolved"), arbitrator_address)`
 - **Data**: `(bounty_id, resolution)`
-- **Trigger**: An arbitrator resolves a disputed bounty
-- **Purpose**: Notify indexer of the final dispute outcome
+- **Trigger**: Arbitrator resolves dispute
+- **Purpose**: Notify indexer of dispute outcome
