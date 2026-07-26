@@ -65,6 +65,7 @@ impl MergeMintContract {
     /// * `min_reputation` - Minimum reputation score required to claim (0 = no minimum).
     /// * `deadline` - Optional ledger sequence deadline after which the bounty cannot be claimed.
     /// * `tags` - Categorisation tags (e.g. "bug", "docs"). At most 5 tags allowed.
+    /// * `max_assignees` - Maximum number of contributors who can claim this bounty (must be >= 1).
     ///
     /// # Returns
     /// The newly generated `BountyId` that uniquely identifies this bounty.
@@ -72,6 +73,7 @@ impl MergeMintContract {
     /// # Panics
     /// * If `reward_amount` is not strictly positive.
     /// * If `tags.len() > 5` (`ContractError::TooManyTags`).
+    /// * If `max_assignees < 1` (`ContractError::MaxAssigneesMustBePositive`).
     ///
     /// # Authorization
     /// Requires auth from `creator`.
@@ -85,6 +87,7 @@ impl MergeMintContract {
         min_reputation: u32,
         deadline: Option<u32>,
         tags: Vec<Symbol>,
+        max_assignees: u32,
     ) -> BountyId {
         // Validated first, ahead of auth and all storage interaction: a reward
         // below the minimum threshold is a malformed request regardless of who
@@ -115,7 +118,7 @@ impl MergeMintContract {
             reward_amount,
             reward_token,
             assignees: Vec::new(&env),
-            max_assignees: 1,
+            max_assignees,
             status: Symbol::new(&env, STATUS_OPEN),
             min_reputation,
             deadline,
@@ -200,8 +203,15 @@ impl MergeMintContract {
             fail(ContractError::ReputationTooLow);
         }
 
-        // For single-assignee bounties the sole claimant gets 10 000 basis points (100%).
-        let share_bp: u32 = 10_000;
+        // Compute per-assignee share as an equal split of 10,000 basis points.
+        // The first assignee receives any remainder from the division.
+        let base_share: u32 = 10_000 / bounty.max_assignees;
+        let remainder: u32 = 10_000 % bounty.max_assignees;
+        let share_bp = if bounty.assignees.is_empty() {
+            base_share + remainder
+        } else {
+            base_share
+        };
         bounty.assignees.push_back((contributor.clone(), share_bp));
 
         let previous_status = bounty.status.clone();

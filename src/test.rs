@@ -41,6 +41,7 @@ fn make_bounty(
         &0,
         &deadline,
         &Vec::new(env),
+        &1,
     )
 }
 
@@ -104,6 +105,7 @@ fn test_tags_stored_and_retrieved() {
         &0,
         &None,
         &tags,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -128,6 +130,7 @@ fn test_empty_tags_valid() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -157,6 +160,7 @@ fn test_five_tags_allowed() {
         &0,
         &None,
         &tags,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -185,6 +189,7 @@ fn test_too_many_tags_panics() {
         &0,
         &None,
         &tags,
+        &1,
     );
 }
 
@@ -447,6 +452,7 @@ fn test_create_bounty() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -541,6 +547,7 @@ fn test_claim_bounty() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
     client.claim_bounty(&contributor, &bounty_id);
 
@@ -587,6 +594,7 @@ fn test_bounty_count() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
     assert_eq!(client.get_bounty_count(), 1);
     client.create_bounty(
@@ -598,6 +606,7 @@ fn test_bounty_count() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
     assert_eq!(client.get_bounty_count(), 2);
 }
@@ -883,6 +892,7 @@ fn test_double_complete_panics() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     // Bounty is "open", not "in_progress" — must panic.
@@ -910,6 +920,7 @@ fn test_assignee_cannot_self_verify() {
         &0,
         &None,
         &Vec::new(&env),
+        &1,
     );
 
     client.claim_bounty(&contributor, &bounty_id);

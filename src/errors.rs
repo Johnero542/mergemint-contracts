@@ -19,6 +19,7 @@ pub enum ContractError {
     DeadlineNotPassed,
     ReputationTooLow,
     TooManyTags,
+    MaxAssigneesMustBePositive,
     OnlyCreatorOrAssigneeCanDispute,
     VerifierNotAuthorized,
     AlreadyApproved,
@@ -50,6 +51,9 @@ pub const fn message(e: ContractError) -> &'static str {
         ContractError::DeadlineNotPassed => "deadline has not passed",
         ContractError::ReputationTooLow => "contributor reputation is too low",
         ContractError::TooManyTags => "too many tags",
+        ContractError::MaxAssigneesMustBePositive => {
+            "max_assignees must be at least 1"
+        }
         ContractError::OnlyCreatorOrAssigneeCanDispute => {
             "only creator or assignee can raise dispute"
         }
