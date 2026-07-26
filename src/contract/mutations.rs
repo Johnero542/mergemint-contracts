@@ -549,9 +549,10 @@ impl MergeMintContract {
 
     /// Expire an open bounty whose deadline has passed.
     ///
-    /// Permissionless: any caller may trigger expiry to keep the open-bounty list
-    /// clean. The bounty must have a deadline set and the current ledger sequence
-    /// must exceed that deadline. Transitions to `"cancelled"`.
+    /// Any authenticated address may trigger expiry — no privileged role is required,
+    /// but the caller must still sign the transaction. The bounty must have a deadline
+    /// set and the current ledger sequence must exceed that deadline.
+    /// Transitions to `"cancelled"`.
     ///
     /// # Arguments
     /// * `caller` - Wallet triggering the expiry (any authenticated address).
