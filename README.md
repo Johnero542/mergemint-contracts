@@ -133,9 +133,14 @@ Built with **Rust (`no_std`)** using the **Soroban SDK 23**, compiled to WASM (`
 
 ```rust
 pub enum DataKey {
-    BountyCount,                 // Singleton u64 counter
-    Bounty(BytesN<32>),          // Bounty by 32-byte ID
-    Contributor(Address),        // Contributor profile by wallet address
+    BountyCount,                    // Singleton u64 counter
+    Bounty(BountyId),               // Bounty state by ID
+    BountyMeta(BountyId),           // Bounty title/description by ID
+    Contributor(Address),           // Contributor profile by wallet address
+    ContributorBounties(Address),   // Bounty IDs associated with a contributor
+    StatusIndex(Symbol),            // Bounty IDs grouped by status
+    OpenBounties,                   // Index of currently open bounty IDs
+    Approvals(BountyId),            // Recorded verifier approvals for multi-sig completion
 }
 ```
 
@@ -143,13 +148,26 @@ pub enum DataKey {
 
 ```rust
 pub struct Bounty {
-    pub creator: Address,         // Maintainer who created the bounty
+    pub creator: Address,                       // Maintainer who created the bounty
+    pub reward_amount: i128,                     // Token amount (e.g., 100 * 10^7)
+    pub reward_token: Address,                   // Token contract address (e.g., USDC, native)
+    pub assignees: Vec<(Address, u32)>,          // Contributors who claimed it
+    pub max_assignees: u32,                      // Max concurrent claimants allowed
+    pub status: Symbol,                          // "open" | "in_progress" | ...
+    pub min_reputation: u32,                     // Minimum reputation required to claim
+    pub deadline: Option<u32>,                   // Optional ledger-timestamp deadline
+    pub required_verifiers: Option<Vec<Address>>,// Allowed approvers when set
+    pub approval_threshold: u32,                 // Approvals needed before auto-completion
+    pub tags: Vec<Symbol>,                       // Categorisation tags (max 5)
+}
+```
+
+### BountyMeta
+
+```rust
+pub struct BountyMeta {
     pub title: Symbol,            // Short title (max 32 chars)
     pub description: Symbol,      // Longer description
-    pub reward_amount: i128,      // Token amount (e.g., 100 * 10^7)
-    pub reward_token: Address,    // Token contract address (e.g., USDC, native)
-    pub assignee: Option<Address>,// Contributor who claimed it
-    pub status: Symbol,           // "open" | "in_progress"
 }
 ```
 
@@ -161,6 +179,8 @@ pub struct Contributor {
     pub reputation: u32,           // Monotonically increasing score (+10 per completion)
     pub total_earned: i128,        // Total tokens earned across all bounties
     pub contribution_count: u32,   // Number of bounties completed
+    pub active_claims: u32,        // Number of bounties currently claimed
+    pub metadata: Option<Symbol>,  // Optional off-chain profile metadata reference
 }
 ```
 
@@ -170,12 +190,15 @@ pub struct Contributor {
 
 ```
 Persistent Storage
-├── DataKey::BountyCount           → u64
-├── DataKey::Bounty(id_0)          → Bounty { ... }
-├── DataKey::Bounty(id_1)          → Bounty { ... }
+├── DataKey::BountyCount                     → u64
+├── DataKey::Bounty(id_0)                    → Bounty { ... }
+├── DataKey::BountyMeta(id_0)                → BountyMeta { title, description }
 ├── ...
-├── DataKey::Contributor(addr_0)   → Contributor { ... }
-├── DataKey::Contributor(addr_1)   → Contributor { ... }
+├── DataKey::Contributor(addr_0)             → Contributor { ... }
+├── DataKey::ContributorBounties(addr_0)     → Vec<BountyId>
+├── DataKey::StatusIndex(status_symbol)      → Vec<BountyId>
+├── DataKey::OpenBounties                    → Vec<BountyId>
+├── DataKey::Approvals(id_0)                 → Vec<Address>
 └── ...
 ```
 
@@ -478,22 +501,42 @@ pub fn emit_reward_paid(env: &Env, bounty_id: &BytesN<32>, contributor: &Address
 // src/types.rs
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
+pub struct BountyId(pub BytesN<32>);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub enum DataKey {
     BountyCount,
-    Bounty(BytesN<32>),
+    Bounty(BountyId),
+    BountyMeta(BountyId),
     Contributor(Address),
+    ContributorBounties(Address),
+    StatusIndex(Symbol),
+    OpenBounties,
+    Approvals(BountyId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct Bounty {
     pub creator: Address,
-    pub title: Symbol,
-    pub description: Symbol,
     pub reward_amount: i128,
     pub reward_token: Address,
-    pub assignee: Option<Address>,
+    pub assignees: Vec<(Address, u32)>,
+    pub max_assignees: u32,
     pub status: Symbol,
+    pub min_reputation: u32,
+    pub deadline: Option<u32>,
+    pub required_verifiers: Option<Vec<Address>>,
+    pub approval_threshold: u32,
+    pub tags: Vec<Symbol>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct BountyMeta {
+    pub title: Symbol,
+    pub description: Symbol,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -503,6 +546,8 @@ pub struct Contributor {
     pub reputation: u32,
     pub total_earned: i128,
     pub contribution_count: u32,
+    pub active_claims: u32,
+    pub metadata: Option<Symbol>,
 }
 ```
 
@@ -854,26 +899,26 @@ Example output: `1`
 ```
 mergemint-contracts/
 ├── src/
-│   ├── lib.rs              # Crate entry, module declarations, re-exports
-│   ├── contract.rs         # Core contract logic (MergeMintContract)
-│   ├── storage.rs          # Persistent storage helpers (get/set)
-│   ├── events.rs           # Event emission functions
-│   ├── types.rs            # DataKey enum, Bounty, Contributor structs
-│   └── test.rs             # Unit tests with Soroban testutils
+│   ├── lib.rs               # Crate entry, module declarations, re-exports
+│   ├── contract/
+│   │   ├── mod.rs           # Contract struct + module wiring
+│   │   ├── mutations.rs     # State-mutating entry points
+│   │   └── queries.rs       # Read-only entry points
+│   ├── storage.rs           # Persistent storage helpers (get/set)
+│   ├── events.rs            # Event emission functions
+│   ├── errors.rs            # ContractError enum + panic helpers
+│   ├── types.rs             # DataKey, Bounty, BountyMeta, Contributor, Milestone
+│   └── test.rs              # Unit tests with Soroban testutils
+├── sdk/
+│   └── src/index.ts         # TypeScript client SDK for the deployed contract
+├── security/                # Threat-model notes for specific invariants
 ├── scripts/
-│   └── deploy.sh           # Build + deploy to Stellar network
+│   └── deploy.sh            # Build + deploy to Stellar network
 ├── docs/
-│   └── architecture.md     # Detailed architecture documentation
-├── test_snapshots/
-│   └── test/               # Soroban ledger snapshots for test assertions
-│       ├── test_bounty_count.1.json
-│       ├── test_claim_bounty.1.json
-│       ├── test_complete_bounty_updates_status.1.json
-│       ├── test_contributor_reputation.1.json
-│       └── test_create_bounty.1.json
-├── Cargo.toml              # Dependencies + release profile
-├── Cargo.lock              # Locked dependency versions
-└── README.md               # This file
+│   └── architecture.md      # Detailed architecture documentation
+├── Cargo.toml                # Dependencies + release profile
+├── Cargo.lock                # Locked dependency versions
+└── README.md                 # This file
 ```
 
 ---
