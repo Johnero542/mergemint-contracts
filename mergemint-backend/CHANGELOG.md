@@ -1,0 +1,224 @@
+# MergeMint Backend API Changelog
+
+All notable changes to the `/api/tx/*` routes and the broader backend API are
+documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+---
+
+## [Unreleased]
+
+### Added
+- `GET /api/v1/bounties/assignee/{address}` — paginated list of bounties where
+  `address` is recorded as an assignee in the `assignees` join table. Symmetric
+  counterpart to the existing `bounties_by_creator` query. (#481)
+- `GET /api/v1/bounties/stream` — Server-Sent Events channel that broadcasts a
+  bounty ID whenever `refresh_bounty` completes in the indexer. Clients receive
+  `bounty_updated` events without polling. (#482)
+
+### Changed
+- All stable endpoints now live under the `/api/v1/` prefix. Unprefixed
+  `/api/*` paths remain as deprecated aliases and will be removed in a future
+  minor release. (#483)
+
+---
+
+## [0.1.0] — 2026-07-01 (initial backfill)
+
+### `/api/tx/*` route inventory
+
+The following nine transaction-building routes were present at the initial
+commit of `mergemint-backend`. All routes accept `Content-Type: application/json`
+and return `application/json`.
+
+#### `POST /api/tx/create-bounty`
+
+Builds and returns a signed XDR envelope for creating a new on-chain bounty.
+
+**Request**
+```json
+{
+  "creator":     "<Stellar address>",
+  "title":       "string (max 64 chars)",
+  "description": "string (max 512 chars)",
+  "reward":      "string (stroops)",
+  "token":       "<Stellar asset code or contract ID>"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+**Errors**
+- `400` — missing or invalid field
+- `422` — reward below on-chain minimum
+
+---
+
+#### `POST /api/tx/claim-bounty`
+
+Builds the claim transaction for an open bounty.
+
+**Request**
+```json
+{
+  "bountyId": "<uuid>",
+  "claimer":  "<Stellar address>"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+**Errors**
+- `404` — bounty not found
+- `409` — bounty is not in `open` state
+
+---
+
+#### `POST /api/tx/submit-work`
+
+Marks work as submitted for a claimed bounty.
+
+**Request**
+```json
+{
+  "bountyId":    "<uuid>",
+  "contributor": "<Stellar address>",
+  "workUrl":     "string (HTTPS URL)"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+---
+
+#### `POST /api/tx/approve-work`
+
+Creator approves submitted work, triggering reward release.
+
+**Request**
+```json
+{
+  "bountyId": "<uuid>",
+  "creator":  "<Stellar address>"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+---
+
+#### `POST /api/tx/reject-work`
+
+Creator rejects submitted work, returning the bounty to `open`.
+
+**Request**
+```json
+{
+  "bountyId": "<uuid>",
+  "creator":  "<Stellar address>",
+  "reason":   "string (optional)"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+---
+
+#### `POST /api/tx/raise-dispute`
+
+Either party raises a dispute on a bounty in `claimed` or `work_submitted` state.
+
+**Request**
+```json
+{
+  "bountyId":  "<uuid>",
+  "initiator": "<Stellar address>",
+  "reason":    "string"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+---
+
+#### `POST /api/tx/resolve-dispute`
+
+Platform arbitrator resolves a disputed bounty.
+
+**Request**
+```json
+{
+  "bountyId":   "<uuid>",
+  "arbitrator": "<Stellar address>",
+  "resolution": "creator | contributor | split",
+  "splitBps":   "number (0–10000, only when resolution=split)"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+---
+
+#### `POST /api/tx/cancel-bounty`
+
+Creator cancels an open bounty and recovers the escrowed reward.
+
+**Request**
+```json
+{
+  "bountyId": "<uuid>",
+  "creator":  "<Stellar address>"
+}
+```
+
+**Response** `200 OK`
+```json
+{ "xdr": "<base64-encoded TransactionEnvelope>" }
+```
+
+---
+
+#### `POST /api/tx/refresh-bounty`
+
+Syncs the on-chain bounty state into the database. Called by the indexer after
+detecting a relevant Soroban event. Also fires the SSE broadcast (see
+`/api/v1/bounties/stream`).
+
+**Request**
+```json
+{
+  "bountyId":       "<uuid>",
+  "ledger":         "number",
+  "contractEvents": ["<base64 XDR event>"]
+}
+```
+
+**Response** `200 OK`
+```json
+{ "ok": true, "bountyId": "<uuid>" }
+```
+
+---
+
+[Unreleased]: https://github.com/mergemint-mint/mergemint-contracts/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mergemint-mint/mergemint-contracts/releases/tag/v0.1.0
