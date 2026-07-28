@@ -231,13 +231,6 @@ pub fn set_open_bounties(env: &Env, bounties: &Vec<BountyId>) {
 
 // ── Status Count ─────────────────────────────────────────────────────────────
 
-pub fn get_status_count(env: &Env, status: &Symbol) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::StatusCount(status.clone()))
-        .unwrap_or(0)
-}
-
 fn increment_status_count(env: &Env, status: &Symbol) {
     let count = get_status_count(env, status);
     let key = DataKey::StatusCount(status.clone());
