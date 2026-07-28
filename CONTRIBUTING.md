@@ -50,14 +50,14 @@ Verify with `stellar --version`. Used for building, deploying, and inspecting co
 
 A `Makefile` at the repository root provides shortcuts for all common tasks:
 
-| Command | Description |
-|---------|-------------|
-| `make build` | Build the WASM contract |
-| `make test` | Run the full test suite |
-| `make lint` | Run Clippy (warnings as errors) and check formatting |
-| `make fmt` | Auto-format source files with rustfmt |
-| `make deploy` | Deploy the contract via `scripts/deploy.sh` |
-| `make clean` | Remove build artifacts |
+| Command       | Description                                          |
+| ------------- | ---------------------------------------------------- |
+| `make build`  | Build the WASM contract                              |
+| `make test`   | Run the full test suite                              |
+| `make lint`   | Run Clippy (warnings as errors) and check formatting |
+| `make fmt`    | Auto-format source files with rustfmt                |
+| `make deploy` | Deploy the contract via `scripts/deploy.sh`          |
+| `make clean`  | Remove build artifacts                               |
 
 ### Building
 
@@ -111,14 +111,14 @@ All Clippy warnings are treated as errors. Fix every diagnostic rather than supp
 
 Use one of these prefixes followed by a short kebab-case description:
 
-| Prefix | When to use |
-|--------|-------------|
-| `feat/` | New contract functionality or behaviour |
-| `fix/` | Bug fixes |
-| `docs/` | Documentation-only changes |
-| `test/` | New or updated tests with no production code change |
-| `refactor/` | Internal restructuring with no behaviour change |
-| `ci/` | Changes to GitHub Actions workflows or scripts |
+| Prefix      | When to use                                         |
+| ----------- | --------------------------------------------------- |
+| `feat/`     | New contract functionality or behaviour             |
+| `fix/`      | Bug fixes                                           |
+| `docs/`     | Documentation-only changes                          |
+| `test/`     | New or updated tests with no production code change |
+| `refactor/` | Internal restructuring with no behaviour change     |
+| `ci/`       | Changes to GitHub Actions workflows or scripts      |
 
 Examples: `feat/claim-expiry`, `fix/double-claim-guard`, `docs/snapshot-guide`
 
@@ -129,6 +129,7 @@ Examples: `feat/claim-expiry`, `fix/double-claim-guard`, `docs/snapshot-guide`
 1. **Open or find an issue first.** Every PR should be traceable to a GitHub issue. If no issue exists for your change, open one before starting work so the approach can be discussed.
 
 2. **Link the issue in your PR description.** Use GitHub's closing keyword so the issue closes automatically on merge:
+
    ```
    Closes #<issue-number>
    ```
@@ -153,6 +154,7 @@ Examples: `feat/claim-expiry`, `fix/double-claim-guard`, `docs/snapshot-guide`
 Every pull request that changes the contract interface **must** include a `CHANGELOG.md` entry under the `[Unreleased]` section. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 A "contract interface change" includes:
+
 - Adding, removing, or renaming a public contract function
 - Changing the parameters or return type of a public function
 - Adding, removing, or reordering fields in `Bounty`, `Contributor`, `BountyMeta`, or `DataKey`
@@ -164,9 +166,11 @@ Use the appropriate subsection (`Added`, `Changed`, `Deprecated`, `Removed`, `Fi
 ## [Unreleased]
 
 ### Added
+
 - `update_contributor_metadata` — lets contributors update their off-chain profile URI.
 
 ### Changed
+
 - `Bounty` — added optional `deadline` field (ledger sequence number).
 ```
 
@@ -182,14 +186,14 @@ Files under `test_snapshots/` capture the full Soroban ledger state produced by 
 
 The current snapshots and the structs they cover:
 
-| Snapshot file | Primary struct tested |
-|---|---|
-| `test_bounty_count.1.json` | `DataKey::BountyCount` |
-| `test_claim_bounty.1.json` | `Bounty`, `Contributor` |
-| `test_complete_bounty_updates_status.1.json` | `Bounty` status transitions |
-| `test_contributor_reputation.1.json` | `Contributor` |
-| `test_create_bounty.1.json` | `Bounty`, `DataKey` |
-| `test_status_index_tracks_bounty_lifecycle.1.json` | `DataKey::StatusIndex` |
+| Snapshot file                                      | Primary struct tested       |
+| -------------------------------------------------- | --------------------------- |
+| `test_bounty_count.1.json`                         | `DataKey::BountyCount`      |
+| `test_claim_bounty.1.json`                         | `Bounty`, `Contributor`     |
+| `test_complete_bounty_updates_status.1.json`       | `Bounty` status transitions |
+| `test_contributor_reputation.1.json`               | `Contributor`               |
+| `test_create_bounty.1.json`                        | `Bounty`, `DataKey`         |
+| `test_status_index_tracks_bounty_lifecycle.1.json` | `DataKey::StatusIndex`      |
 
 ### How Snapshots Are Generated
 
@@ -198,6 +202,7 @@ Soroban's test infrastructure writes snapshot files automatically when a test th
 ### When Snapshots Become Stale
 
 Snapshots must be regenerated if:
+
 - A field is added to `Bounty`, `Contributor`, or other `#[contracttype]` structs
 - A field is removed or reordered
 - A field type changes (e.g., `u32` → `u64`)

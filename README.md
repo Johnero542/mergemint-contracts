@@ -13,21 +13,25 @@ The solution consists of:
 ## Key Features
 
 ### Batch Processing
+
 - Supports up to 100 contributors per batch
 - Automatic chunking for large datasets
 - Configurable batch sizes
 
 ### Parallel Execution
+
 - Up to 10 parallel tasks per batch
 - Non-blocking task execution
 - Automatic retry mechanism (3 retries with exponential backoff)
 
 ### Error Handling
+
 - Comprehensive error tracking per task
 - Batch-level success/failure metrics
 - Detailed error messages for debugging
 
 ### Safety Features
+
 - Reentrancy protection
 - Pausable contract for emergency stops
 - Owner-only operations
@@ -46,16 +50,15 @@ await contract.deployed();
 ### Batch Refresh via JavaScript
 
 ```javascript
-const BatchRefreshManager = require('./scripts/batchRefresh');
+const BatchRefreshManager = require("./scripts/batchRefresh");
 
 const manager = new BatchRefreshManager(contractAddress);
 await manager.initialize();
 
-const result = await manager.processBatchRefresh(
-    contributors,
-    bountyIds,
-    { parallel: true, verbose: true }
-);
+const result = await manager.processBatchRefresh(contributors, bountyIds, {
+  parallel: true,
+  verbose: true,
+});
 
 console.log(result.summary);
 ```
@@ -65,7 +68,9 @@ console.log(result.summary);
 ### Contract Functions
 
 #### `createBatch(address[] contributors, uint256[] bountyIds)`
+
 Creates a new batch for processing.
+
 - **Parameters**:
   - `contributors`: Array of contributor addresses
   - `bountyIds`: Array of corresponding bounty IDs
@@ -73,33 +78,45 @@ Creates a new batch for processing.
 - **Events**: `BatchCreated`
 
 #### `processBatchParallel(uint256 batchId)`
+
 Processes a batch with parallel execution.
+
 - **Parameters**:
   - `batchId`: ID of the batch to process
 - **Events**: `ParallelRefreshStarted`, `TaskCompleted`, `TaskFailed`
 
 #### `finalizeBatch(uint256 batchId)`
+
 Finalizes batch processing.
+
 - **Parameters**:
   - `batchId`: ID of the batch to finalize
 - **Events**: `BatchProcessingCompleted`
 
 #### `getBatch(uint256 batchId)`
+
 Retrieves batch details.
+
 - **Returns**: `RefreshBatch` struct
 
 #### `getTask(uint256 taskId)`
+
 Retrieves task details.
+
 - **Returns**: `BountyRefreshTask` struct
 
 #### `getContributorTasks(address contributor)`
+
 Retrieves all tasks for a contributor.
+
 - **Returns**: Array of task IDs
 
 ### Manager Methods
 
 #### `processBatchRefresh(contributors, bountyIds, options)`
+
 Processes multiple batches of contributors.
+
 - **Parameters**:
   - `contributors`: Array of contributor addresses
   - `bountyIds`: Array of bounty IDs
@@ -124,6 +141,7 @@ npx hardhat test test/BountyRefresh.test.js
 ```
 
 Test coverage includes:
+
 - Batch creation validation
 - Parallel processing
 - Error handling
