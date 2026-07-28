@@ -44,15 +44,6 @@ impl MergeMintContract {
         storage::get_bounties_by_status(&env, &status)
     }
 
-    pub fn get_status_count(env: Env, status: Symbol) -> u32 {
-        storage::get_status_count(&env, &status)
-    }
-
-    /// Return all currently open bounty IDs.
-    ///
-    /// Equivalent to `GET /api/bounties/open` in the REST layer. The full list
-    /// is stored under `DataKey::OpenBounties` and is maintained atomically by
-    /// `create_bounty` / `claim_bounty` / `cancel_bounty` / `expire_bounty`.
     pub fn get_open_bounties(env: Env) -> Vec<BountyId> {
         storage::get_open_bounties(&env)
     }
