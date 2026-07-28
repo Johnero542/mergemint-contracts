@@ -64,6 +64,7 @@ export interface CreateBountyParams {
   rewardToken: string;
   minReputation: number;
   deadline: number | null;
+  tags: string[];
   requiredVerifiers?: string[];
   approvalThreshold?: number;
 }
@@ -76,6 +77,12 @@ function addressToScVal(address: string): xdr.ScVal {
 
 function symbolToScVal(value: string): xdr.ScVal {
   return nativeToScVal(value, { type: "symbol" });
+}
+
+function symbolVecToScVal(values: string[]): xdr.ScVal {
+  return xdr.ScVal.scvVec(
+    values.map((v) => symbolToScVal(v))
+  );
 }
 
 function u32ToScVal(value: number): xdr.ScVal {
@@ -230,6 +237,7 @@ export class MergeMintSDK {
       addressToScVal(params.rewardToken),
       u32ToScVal(params.minReputation),
       optionU32ToScVal(params.deadline),
+      symbolVecToScVal(params.tags),
       optionVecAddressToScVal(params.requiredVerifiers),
       u32ToScVal(params.approvalThreshold ?? 1),
     ];

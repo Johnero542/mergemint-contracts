@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
+use soroban_sdk::{
+    testutils::Address as _,
+    token::{StellarAssetClient, TokenClient},
+    Address, Env, Symbol, Vec,
+};
 
 use crate::contract::MergeMintContract;
 use crate::contract::MergeMintContractClient;
@@ -502,7 +506,7 @@ fn test_second_claim_rejected_while_active() {
 }
 
 #[test]
-#[should_panic(expected = "bounty already assigned")]
+#[should_panic(expected = "bounty not open")]
 fn test_second_contributor_cannot_claim_full_bounty() {
     let (env, creator, contributor, _verifier) = setup_test();
     let contract_id = env.register(MergeMintContract, ());
@@ -654,6 +658,15 @@ fn test_create_bounty_with_multisig_then_quorum_completes() {
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
+    // Register a real Stellar Asset Contract so token.transfer works.
+    // The admin/issuer cannot hold the asset, so use a separate admin address.
+    let token_admin = Address::generate(&env);
+    let token_address = env.register_stellar_asset_contract(token_admin.clone());
+    let sac = StellarAssetClient::new(&env, &token_address);
+    // Both verifiers need balance because the last approver pays the reward.
+    sac.mint(&verifier1, &1000_i128);
+    sac.mint(&verifier2, &1000_i128);
+
     let mut verifiers: Vec<Address> = Vec::new(&env);
     verifiers.push_back(verifier1.clone());
     verifiers.push_back(verifier2.clone());
@@ -663,7 +676,7 @@ fn test_create_bounty_with_multisig_then_quorum_completes() {
         &Symbol::new(&env, "multisig"),
         &Symbol::new(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &token_address,
         &0,
         &None,
         &Vec::new(&env),
