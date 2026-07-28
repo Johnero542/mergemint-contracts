@@ -17,8 +17,8 @@ export async function validateNetworkPassphrase(
   if (actualPassphrase !== config.configuredPassphrase) {
     throw new Error(
       `NETWORK_PASSPHRASE mismatch: configured "${config.configuredPassphrase}" ` +
-        `but RPC endpoint ${config.rpcUrl} reports "${actualPassphrase}". ` +
-        "Update NETWORK_PASSPHRASE to match the network the contract was deployed to.",
+        `but RPC endpoint ${config.rpcUrl} reports "${actualPassphrase}".\n` +
+        `Please update NETWORK_PASSPHRASE to match the network the contract was deployed to.`,
     );
   }
 }

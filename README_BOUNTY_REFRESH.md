@@ -7,26 +7,31 @@ This implementation provides a production-ready solution for batch and parallel 
 ## Features
 
 ### 1. **Batch Processing**
+
 - Process multiple contributors in a single transaction
 - Configurable batch size (max 100 contributors per batch)
 - Reduces gas costs compared to individual refreshes
 
 ### 2. **Parallel Processing**
+
 - Split large contributor lists into multiple batches
 - Process batches sequentially within a single transaction
 - Automatic batch size calculation
 
 ### 3. **Queue Management**
+
 - Queue contributors for later processing
 - Process queued contributors in configurable batch sizes
 - Pagination support for viewing pending contributors
 
 ### 4. **Error Handling**
+
 - Graceful fallback from batch to individual processing
 - Detailed error tracking and reporting
 - Reentrancy protection
 
 ### 5. **Safety Features**
+
 - Input validation (no zero addresses, no duplicates)
 - Batch size limits
 - Owner-only operations
@@ -72,11 +77,13 @@ bountyRefresh.processPendingBatch(100);
 ## Gas Optimization
 
 ### Batch Processing Benefits
+
 - **Single batch call**: ~50% gas reduction vs individual calls
 - **Parallel processing**: Optimal for large datasets
 - **Queue system**: Allows off-peak processing
 
 ### Recommended Batch Sizes
+
 - **Small datasets (< 50)**: Use `refreshBounty()` directly
 - **Medium datasets (50-500)**: Use `refreshBountyParallel()` with batch size 50-100
 - **Large datasets (> 500)**: Use queue system with `processPendingBatch()`
@@ -91,6 +98,7 @@ bountyRefresh.processPendingBatch(100);
 ## Error Handling
 
 ### Custom Errors
+
 - `InvalidBountyManager()`: Invalid bounty manager address
 - `BatchSizeExceeded()`: Batch size exceeds maximum
 - `NoContributorsToRefresh()`: Empty contributor list

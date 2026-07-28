@@ -7,26 +7,31 @@ This implementation provides efficient batch and parallel processing for contrib
 ## Features
 
 ### 1. **Batch Processing**
+
 - Processes contributors in configurable batches (default: 100)
 - Reduces gas consumption per transaction
 - Prevents stack overflow issues with large arrays
 
 ### 2. **Parallel Processing**
+
 - Processes multiple batches in parallel (up to 50 concurrent batches)
 - Improves throughput for large contributor sets
 - Maintains transaction safety with reentrancy guards
 
 ### 3. **Range-Based Refresh**
+
 - Allows refreshing specific ranges of contributors
 - Useful for resuming interrupted operations
 - Enables fine-grained control over refresh operations
 
 ### 4. **Error Handling**
+
 - Individual contributor failures don't block the entire batch
 - Comprehensive event logging for monitoring
 - Graceful degradation with try-catch blocks
 
 ### 5. **Contributor Tracking**
+
 - Maintains set of processed contributors
 - Prevents duplicate processing
 - Enables verification of refresh status
@@ -34,24 +39,28 @@ This implementation provides efficient batch and parallel processing for contrib
 ## Usage
 
 ### Basic Batch Refresh
+
 ```solidity
 // Refresh all contributors in batches of 100
 await bountyRefresh.refreshBountyBatched(bountyId);
 ```
 
 ### Parallel Refresh
+
 ```solidity
 // Refresh with custom batch size (up to 100)
 await bountyRefresh.refreshBountyParallel(bountyId, 50);
 ```
 
 ### Range-Based Refresh
+
 ```solidity
 // Refresh contributors from index 0 to 50
 await bountyRefresh.refreshBountyRange(bountyId, 0, 50);
 ```
 
 ### Query Status
+
 ```solidity
 // Get number of processed contributors
 const count = await bountyRefresh.getProcessedContributorCount(bountyId);
@@ -78,12 +87,14 @@ const isProcessed = await bountyRefresh.isContributorProcessed(bountyId, contrib
 ## Gas Optimization
 
 ### Before (Sequential Processing)
+
 - Single transaction with all contributors
 - High gas cost per transaction
 - Risk of out-of-gas errors
 - Potential stack overflow
 
 ### After (Batch Processing)
+
 - Multiple smaller transactions
 - Reduced gas per transaction
 - Better error isolation
@@ -100,6 +111,7 @@ const isProcessed = await bountyRefresh.isContributorProcessed(bountyId, contrib
 ## Testing
 
 Run the test suite:
+
 ```bash
 npx hardhat test test/BountyRefresh.test.js
 ```
