@@ -60,7 +60,7 @@ impl MergeMintContract {
     /// * `creator` - Wallet that will own and manage this bounty.
     /// * `title` - Short human-readable title (max 32 chars via `Symbol`).
     /// * `description` - Longer description of the work required.
-    /// * `reward_amount` - Raw token units for the reward. Must be positive.
+    /// * `reward_amount` - Raw token units for the reward. Must be at least `MIN_REWARD_AMOUNT`.
     /// * `reward_token` - Soroban token contract address used for payout.
     /// * `min_reputation` - Minimum reputation score required to claim (0 = no minimum).
     /// * `deadline` - Optional ledger sequence deadline after which the bounty cannot be claimed.
@@ -72,6 +72,7 @@ impl MergeMintContract {
     ///
     /// # Panics
     /// * If `reward_amount` is not strictly positive.
+    /// * If `reward_amount` is below `MIN_REWARD_AMOUNT` (`ContractError::RewardBelowMinimum`).
     /// * If `tags.len() > 5` (`ContractError::TooManyTags`).
     /// * If `max_assignees < 1` (`ContractError::MaxAssigneesMustBePositive`).
     ///
@@ -94,6 +95,10 @@ impl MergeMintContract {
         // is asking.
         if reward_amount < MIN_REWARD_AMOUNT {
             fail(ContractError::RewardMustBePositive);
+        }
+
+        if reward_amount < MIN_REWARD_AMOUNT {
+            fail(ContractError::RewardBelowMinimum);
         }
 
         // Validate tags length before auth to fail fast on malformed input.
