@@ -30,6 +30,9 @@ export function BountyDetail({ bounty, network, onClaim }: BountyDetailProps) {
           contract issue #11 (multi-sig verifiers) ships. */}
       <p className="bounty-detail__multisig-note">Verifiers: single-approver (multi-sig not yet enabled)</p>
 
+      {/* Stub only — percentage-share display is unreachable while the contract
+          still enforces a single assignee; activates once contract issues #9
+          (multi-assignee) and #11 (multi-sig verifiers) ship. */}
       <ul className="assignee-list">
         {bounty.assignees.map((assignee) => (
           <li key={assignee.address}>
