@@ -128,17 +128,6 @@ pub fn set_bounties_by_status(env: &Env, status: &Symbol, bounties: &Vec<BountyI
         .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
 }
 
-pub fn get_status_count(env: &Env, status: &Symbol) -> u32 {
-    let key = DataKey::StatusCount(status.clone());
-    let count: Option<u32> = env.storage().persistent().get(&key);
-    if count.is_some() {
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
-    }
-    count.unwrap_or(0)
-}
-
 pub fn set_status_count(env: &Env, status: &Symbol, count: &u32) {
     let key = DataKey::StatusCount(status.clone());
     env.storage().persistent().set(&key, count);
@@ -230,13 +219,6 @@ pub fn set_open_bounties(env: &Env, bounties: &Vec<BountyId>) {
 }
 
 // ── Status Count ─────────────────────────────────────────────────────────────
-
-pub fn get_status_count(env: &Env, status: &Symbol) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::StatusCount(status.clone()))
-        .unwrap_or(0)
-}
 
 fn increment_status_count(env: &Env, status: &Symbol) {
     let count = get_status_count(env, status);
