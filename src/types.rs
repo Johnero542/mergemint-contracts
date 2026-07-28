@@ -88,6 +88,22 @@ pub struct Contributor {
     pub metadata: Option<Symbol>,
 }
 
+/// Pagination metadata returned alongside a page of results.
+///
+/// Used by `get_open_bounties_paged` to let callers know the total number of
+/// open bounties so they can compute the number of pages without a separate
+/// `get_bounty_count` call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct PageInfo {
+    /// Zero-based offset of the first item in this page.
+    pub offset: u32,
+    /// Number of items requested (may be fewer if near the end of the list).
+    pub limit: u32,
+    /// Total number of open bounties at query time.
+    pub total: u32,
+}
+
 impl Contributor {
     pub fn new(address: Address) -> Self {
         Self {
