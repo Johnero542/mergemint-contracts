@@ -37,6 +37,8 @@ fn make_bounty(
         &0,
         &deadline,
         &Vec::new(env),
+        &None,
+        &1,
     )
 }
 
@@ -64,6 +66,8 @@ fn test_tags_stored_and_retrieved() {
         &0,
         &None,
         &tags,
+        &None,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -88,6 +92,8 @@ fn test_empty_tags_valid() {
         &0,
         &None,
         &Vec::new(&env),
+        &None,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -117,6 +123,8 @@ fn test_five_tags_allowed() {
         &0,
         &None,
         &tags,
+        &None,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -145,6 +153,8 @@ fn test_too_many_tags_panics() {
         &0,
         &None,
         &tags,
+        &None,
+        &1,
     );
 }
 
@@ -336,6 +346,8 @@ fn test_create_bounty() {
         &0,
         &None,
         &Vec::new(&env),
+        &None,
+        &1,
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -362,6 +374,8 @@ fn test_claim_bounty() {
         &0,
         &None,
         &Vec::new(&env),
+        &None,
+        &1,
     );
     client.claim_bounty(&contributor, &bounty_id);
 
@@ -388,6 +402,8 @@ fn test_bounty_count() {
         &0,
         &None,
         &Vec::new(&env),
+        &None,
+        &1,
     );
     assert_eq!(client.get_bounty_count(), 1);
     client.create_bounty(
@@ -399,6 +415,8 @@ fn test_bounty_count() {
         &0,
         &None,
         &Vec::new(&env),
+        &None,
+        &1,
     );
     assert_eq!(client.get_bounty_count(), 2);
 }
@@ -583,6 +601,8 @@ fn test_double_complete_panics() {
         &0,
         &None,
         &Vec::new(&env),
+        &None,
+        &1,
     );
 
     // Bounty is "open", not "in_progress" — must panic.
@@ -610,10 +630,150 @@ fn test_assignee_cannot_self_verify() {
         &0,
         &None,
         &Vec::new(&env),
+        &None,
+        &1,
     );
 
     client.claim_bounty(&contributor, &bounty_id);
 
     // The assignee (contributor) attempts to act as their own verifier — must panic.
     client.complete_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Multi-sig: create_bounty with required_verifiers / approval_threshold
+// ===========================================================================
+
+/// Create a bounty with multi-sig verifiers, claim it, then verify that
+/// approval_threshold approvals trigger auto-completion.
+#[test]
+fn test_create_bounty_with_multisig_then_quorum_completes() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let verifier1 = Address::generate(&env);
+    let verifier2 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let mut verifiers: Vec<Address> = Vec::new(&env);
+    verifiers.push_back(verifier1.clone());
+    verifiers.push_back(verifier2.clone());
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "multisig"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &Some(verifiers.clone()),
+        &2,
+    );
+
+    // Verify the bounty was stored with the multi-sig config.
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.required_verifiers.unwrap(), verifiers);
+    assert_eq!(bounty.approval_threshold, 2);
+
+    // Claim the bounty.
+    client.claim_bounty(&contributor, &bounty_id);
+
+    // First approval — below threshold, no completion yet.
+    client.approve_completion(&verifier1, &bounty_id);
+
+    // Second approval — reaches threshold, triggers auto-completion.
+    client.approve_completion(&verifier2, &bounty_id);
+
+    // Verify the bounty is now completed.
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "completed"));
+}
+
+/// Create a bounty with multi-sig, then verify that duplicate votes are rejected.
+#[test]
+#[should_panic(expected = "verifier has already approved this bounty")]
+fn test_approve_completion_duplicate_vote_rejected() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let verifier1 = Address::generate(&env);
+    let verifier2 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let mut verifiers: Vec<Address> = Vec::new(&env);
+    verifiers.push_back(verifier1.clone());
+    verifiers.push_back(verifier2.clone());
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "dupvote"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &Some(verifiers),
+        &2,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.approve_completion(&verifier1, &bounty_id);
+    // Second vote from the same verifier — must panic.
+    client.approve_completion(&verifier1, &bounty_id);
+}
+
+/// approval_threshold exceeding verifier count must panic.
+#[test]
+#[should_panic(expected = "approval threshold exceeds number of required verifiers")]
+fn test_create_bounty_invalid_threshold_panics() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let mut verifiers: Vec<Address> = Vec::new(&env);
+    verifiers.push_back(Address::generate(&env));
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bad_threshold"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &Some(verifiers),
+        &5,
+    );
+}
+
+/// A non-verifier calling approve_completion must panic.
+#[test]
+#[should_panic(expected = "verifier is not in the required verifiers list")]
+fn test_approve_completion_unauthorized_verifier_panics() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let verifier1 = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let mut verifiers: Vec<Address> = Vec::new(&env);
+    verifiers.push_back(verifier1.clone());
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "unauth_ver"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &Some(verifiers),
+        &1,
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.approve_completion(&unauthorized, &bounty_id);
 }

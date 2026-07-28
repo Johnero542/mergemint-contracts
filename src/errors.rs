@@ -20,6 +20,7 @@ pub enum ContractError {
     ReputationTooLow,
     TooManyTags,
     OnlyCreatorOrAssigneeCanDispute,
+    ApprovalThresholdExceedsVerifiers,
 }
 
 /// Convert a `ContractError` to its canonical panic message and panic.
@@ -48,6 +49,9 @@ pub const fn message(e: ContractError) -> &'static str {
         ContractError::TooManyTags => "too many tags",
         ContractError::OnlyCreatorOrAssigneeCanDispute => {
             "only creator or assignee can raise dispute"
+        }
+        ContractError::ApprovalThresholdExceedsVerifiers => {
+            "approval threshold exceeds number of required verifiers"
         }
     }
 }

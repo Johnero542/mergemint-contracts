@@ -37,6 +37,9 @@ export interface Bounty {
   status: string;
   minReputation: number;
   deadline: number | null;
+  requiredVerifiers?: string[];
+  approvalThreshold: number;
+  tags: string[];
 }
 
 export interface BountyMeta {
@@ -61,6 +64,8 @@ export interface CreateBountyParams {
   rewardToken: string;
   minReputation: number;
   deadline: number | null;
+  requiredVerifiers?: string[];
+  approvalThreshold?: number;
 }
 
 // === Helpers
@@ -79,6 +84,24 @@ function u32ToScVal(value: number): xdr.ScVal {
 
 function i128ToScVal(value: bigint): xdr.ScVal {
   return nativeToScVal(value, { type: "i128" });
+}
+
+function vecAddressToScVal(addresses: string[]): xdr.ScVal {
+  return xdr.ScVal.scvVec(
+    addresses.map((addr) => new Address(addr).toScVal())
+  );
+}
+
+function optionVecAddressToScVal(addresses: string[] | undefined): xdr.ScVal {
+  if (!addresses || addresses.length === 0) {
+    return xdr.ScVal.scvVoid();
+  }
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: nativeToScVal("Some", { type: "symbol" }),
+      val: vecAddressToScVal(addresses),
+    }),
+  ]);
 }
 
 function optionU32ToScVal(value: number | null): xdr.ScVal {
@@ -106,6 +129,8 @@ function hexToBytesN(hex: string): xdr.ScVal {
 function parseBounty(raw: unknown): Bounty {
   const map = raw as Record<string, unknown>;
   const assigneesRaw = (map.assignees as Array<[unknown, unknown]>) ?? [];
+  const verifiersRaw = map.required_verifiers as Array<unknown> | null;
+  const tagsRaw = (map.tags as Array<unknown>) ?? [];
   return {
     creator: map.creator as string,
     rewardAmount: BigInt(map.reward_amount as string),
@@ -118,6 +143,9 @@ function parseBounty(raw: unknown): Bounty {
     status: map.status as string,
     minReputation: map.min_reputation as number,
     deadline: (map.deadline as number | null) ?? null,
+    requiredVerifiers: verifiersRaw?.map((v) => v as string),
+    approvalThreshold: (map.approval_threshold as number) ?? 1,
+    tags: tagsRaw.map((t) => t as string),
   };
 }
 
@@ -202,6 +230,8 @@ export class MergeMintSDK {
       addressToScVal(params.rewardToken),
       u32ToScVal(params.minReputation),
       optionU32ToScVal(params.deadline),
+      optionVecAddressToScVal(params.requiredVerifiers),
+      u32ToScVal(params.approvalThreshold ?? 1),
     ];
     return this.buildTransaction("create_bounty", args, sourceAccount);
   }
