@@ -49,6 +49,43 @@ fn distribute_payout(
     primary_assignee
 }
 
+/// Decrement a contributor's active claims counter, if greater than zero.
+fn decrement_active_claims(contrib: &mut Contributor) {
+    if contrib.active_claims > 0 {
+        contrib.active_claims -= 1;
+    }
+}
+
+/// Complete a bounty by marking it as completed and distributing payout.
+/// Used as a helper by both complete_bounty and approve_completion.
+fn complete_bounty_inner(env: Env, verifier: Address, bounty_id: BountyId) {
+    let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+        Some(b) => b,
+        None => fail(ContractError::BountyNotFound),
+    };
+
+    if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
+        fail(ContractError::BountyNotInProgress);
+    }
+
+    if bounty.assignees.is_empty() {
+        fail(ContractError::BountyHasNoAssignee);
+    }
+
+    let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
+    let previous_status = bounty.status.clone();
+    bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+    storage::store_bounty(&env, &bounty_id, &bounty);
+    storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+
+    let token = TokenClient::new(&env, &bounty.reward_token);
+    distribute_payout(
+        &env, &bounty_id, &bounty.assignees, &verifier, &token, bounty.reward_amount,
+    );
+
+    events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
+}
+
 #[contractimpl]
 impl MergeMintContract {
     /// Create a new bounty.
@@ -402,7 +439,7 @@ impl MergeMintContract {
         if bounty.status != Symbol::new(&env, STATUS_OPEN)
             && bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS)
         {
-            fail(ContractError::BountyNotDisputable);
+            fail(ContractError::BountyNotDisputed);
         }
 
         let is_assignee = bounty.assignees.iter().any(|(addr, _)| addr == caller);
