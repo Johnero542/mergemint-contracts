@@ -48,9 +48,13 @@ pub async fn list_bounties(
         .await
         .map(Json)
         .map_err(|e| {
+            // Log the real error server-side; send only a generic message to
+            // the client so internal detail (DB errors, query strings, etc.)
+            // is never exposed (#469).
+            tracing::error!(error = %e, "list_bounties: database error");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": e.to_string() })),
+                Json(serde_json::json!({ "error": "internal server error" })),
             )
         })
 }
@@ -81,9 +85,12 @@ pub async fn list_bounties_by_assignee(
         .await
         .map(Json)
         .map_err(|e| {
+            // Log the real error server-side; send only a generic message to
+            // the client so internal detail is never exposed (#469).
+            tracing::error!(error = %e, address = %address, "list_bounties_by_assignee: database error");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": e.to_string() })),
+                Json(serde_json::json!({ "error": "internal server error" })),
             )
         })
 }
