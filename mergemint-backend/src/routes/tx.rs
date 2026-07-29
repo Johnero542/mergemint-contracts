@@ -2,7 +2,12 @@
 //
 // Transaction / bounty route handlers.
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -20,6 +25,14 @@ pub struct AppState {
 // Error helpers
 // ---------------------------------------------------------------------------
 
+/// The JSON shape returned to the client on any error.
+///
+/// **Security note (#469):** For `INTERNAL_SERVER_ERROR` (500) responses the
+/// `message` field is *always* set to the generic string
+/// `"internal server error"` before serialising.  The original detail is
+/// emitted via `tracing::error!` so it appears in server logs without ever
+/// being sent to the client.  This prevents RPC debug strings, stack traces,
+/// and other internal state from leaking across the API boundary.
 #[derive(Debug, Serialize)]
 pub struct AppError {
     pub code: u16,
@@ -41,6 +54,46 @@ impl AppError {
             message: msg.into(),
         };
         (StatusCode::NOT_FOUND, Json(err))
+    }
+
+    /// Construct an internal server error.
+    ///
+    /// `detail` is **only** logged via `tracing::error!`; it is never
+    /// included in the HTTP response body (see [`IntoResponse`] impl below).
+    pub fn internal(detail: impl std::fmt::Display) -> AppError {
+        tracing::error!(detail = %detail, "internal server error");
+        AppError {
+            code: 500,
+            // The client-facing message is always generic — the real detail
+            // lives in the log line emitted above.
+            message: "internal server error".to_string(),
+        }
+    }
+}
+
+/// Converts `AppError` into an HTTP response, redacting internal detail.
+///
+/// For status 500 the `message` field is *replaced* with the generic string
+/// `"internal server error"` even if the `AppError` value was constructed some
+/// other way.  This acts as a safety net so that any code path that produces a
+/// 500 cannot accidentally expose internal state to the client.
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let status = StatusCode::from_u16(self.code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+        // Redact the message for any 5xx response before sending to client.
+        let safe_message = if status.is_server_error() {
+            "internal server error".to_string()
+        } else {
+            self.message
+        };
+
+        let body = AppError {
+            code: status.as_u16(),
+            message: safe_message,
+        };
+
+        (status, Json(body)).into_response()
     }
 }
 
@@ -180,4 +233,93 @@ pub async fn self_claim(
         ok: true,
         xdr: Some(xdr),
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Tests (#469) — 500 responses must never echo internal detail to client
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+    use axum::body::to_bytes;
+
+    /// Helper: convert a Response body to a String.
+    async fn body_string(response: axum::response::Response) -> String {
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("failed to read response body");
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// A 500 response must never contain the raw internal detail string in the
+    /// response body.  The detail must only appear in server-side logs.
+    #[tokio::test]
+    async fn internal_error_body_does_not_contain_raw_detail() {
+        let raw_detail = "sqlx error: could not connect to postgres://internal-host:5432/db";
+
+        let response = AppError::internal(raw_detail).into_response();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "status must be 500"
+        );
+
+        let body = body_string(response).await;
+
+        assert!(
+            !body.contains(raw_detail),
+            "response body must NOT contain the raw internal detail; got: {body}"
+        );
+        assert!(
+            body.contains("internal server error"),
+            "response body must contain the generic message; got: {body}"
+        );
+    }
+
+    /// Even if an `AppError` is constructed by hand with `code: 500` and a
+    /// sensitive message, `IntoResponse` must still redact it.
+    #[tokio::test]
+    async fn manually_constructed_500_is_redacted() {
+        let sensitive = "postgres password is hunter2";
+        let err = AppError {
+            code: 500,
+            message: sensitive.to_string(),
+        };
+
+        let body = body_string(err.into_response()).await;
+
+        assert!(
+            !body.contains(sensitive),
+            "manually constructed 500 body must not contain sensitive text; got: {body}"
+        );
+        assert!(
+            body.contains("internal server error"),
+            "body must contain the safe fallback message; got: {body}"
+        );
+    }
+
+    /// 4xx errors must still surface their descriptive message to the client.
+    #[tokio::test]
+    async fn client_errors_preserve_message() {
+        let (status, Json(err)) = AppError::bad_request("bounty id is required");
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(err.message, "bounty id is required");
+    }
+
+    /// `AppError` via `IntoResponse` for a 400 must preserve the message.
+    #[tokio::test]
+    async fn bad_request_into_response_preserves_message() {
+        let err = AppError {
+            code: 400,
+            message: "missing field: bounty_id".to_string(),
+        };
+        let body = body_string(err.into_response()).await;
+        assert!(
+            body.contains("missing field: bounty_id"),
+            "400 body must contain the original message; got: {body}"
+        );
+    }
 }
