@@ -1398,3 +1398,288 @@ fn test_resolve_dispute_complete_pays_from_arbitrator() {
         "assignee received the full reward from the arbitrator"
     );
 }
+
+// ===========================================================================
+// Issue 9/10 — Multi-assignee proportional payout math
+//
+// These tests verify the basis-point share assignment and payout arithmetic
+// for bounties with more than one assignee, focusing on:
+//   - Correct share_bp values stored when multiple contributors claim
+//   - Payout amounts computed as reward_amount * share_bp / 10_000
+//   - Integer-division remainder handling (first assignee absorbs remainder)
+//   - Payout totals across all assignees accounting for integer-division loss
+// ===========================================================================
+
+/// Helper: create a bounty with a real token, minting `reward_amount` to
+/// `verifier` (who pays out), and return (bounty_id, token_addr).
+/// Accepts `max_assignees` so multi-assignee scenarios can be set up.
+fn make_multi_bounty_with_token(
+    client: &MergeMintContractClient,
+    env: &Env,
+    creator: &Address,
+    verifier: &Address,
+    tag: &str,
+    reward_amount: i128,
+    max_assignees: u32,
+) -> (crate::types::BountyId, Address) {
+    let token_addr = create_token_and_mint(env, creator, verifier, reward_amount);
+    let bounty_id = client.create_bounty(
+        creator,
+        &Symbol::new(env, tag),
+        &String::from_str(env, "multi-assignee bounty"),
+        &reward_amount,
+        &token_addr,
+        &0,
+        &None,
+        &Vec::new(env),
+        &max_assignees,
+    );
+    (bounty_id, token_addr)
+}
+
+/// Two assignees with max_assignees=2 each receive share_bp=5000 (even split).
+/// With reward_amount=10_000 each payout is 5_000, and the sum equals
+/// reward_amount exactly (no integer-division loss for an even split).
+#[test]
+fn test_two_assignees_equal_share_bp() {
+    let (env, creator, contributor1, verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 10_000;
+    let (bounty_id, _) = make_multi_bounty_with_token(
+        &client, &env, &creator, &verifier, "two_eq", reward_amount, 2,
+    );
+
+    // First claimant — absorbs remainder (10_000 % 2 == 0, so no remainder here).
+    client.claim_bounty(&contributor1, &bounty_id);
+    // Second claimant.
+    client.claim_bounty(&contributor2, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.assignees.len(), 2, "both assignees recorded");
+
+    let (addr1, share1) = bounty.assignees.get(0).unwrap();
+    let (addr2, share2) = bounty.assignees.get(1).unwrap();
+    assert_eq!(addr1, contributor1);
+    assert_eq!(addr2, contributor2);
+
+    // base_share = 10_000 / 2 = 5_000; remainder = 0 → both get 5_000
+    assert_eq!(share1, 5_000u32, "first assignee share_bp");
+    assert_eq!(share2, 5_000u32, "second assignee share_bp");
+    assert_eq!(share1 + share2, 10_000u32, "share_bp sums to 10_000");
+}
+
+/// Two assignees with max_assignees=2 and reward_amount=10_000 each receive
+/// exactly 5_000 tokens. Total payout == reward_amount (even split, no loss).
+#[test]
+fn test_two_assignees_payout_sum_equals_reward() {
+    let (env, creator, contributor1, verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 10_000;
+    let (bounty_id, token_addr) = make_multi_bounty_with_token(
+        &client, &env, &creator, &verifier, "two_payout", reward_amount, 2,
+    );
+
+    client.claim_bounty(&contributor1, &bounty_id);
+    client.claim_bounty(&contributor2, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    let payout1 = token_client.balance(&contributor1);
+    let payout2 = token_client.balance(&contributor2);
+
+    // Each gets reward_amount * 5_000 / 10_000 = 5_000
+    assert_eq!(payout1, 5_000, "first assignee payout");
+    assert_eq!(payout2, 5_000, "second assignee payout");
+    assert_eq!(
+        payout1 + payout2,
+        reward_amount,
+        "payout sum equals reward_amount for even split"
+    );
+}
+
+/// Three assignees with max_assignees=3:
+/// base_share = 10_000 / 3 = 3_333; remainder = 10_000 % 3 = 1.
+/// The FIRST assignee absorbs the remainder → share_bp = 3_334.
+/// The other two assignees each get share_bp = 3_333.
+/// Total share_bp = 3_334 + 3_333 + 3_333 = 10_000.
+#[test]
+fn test_three_assignees_first_absorbs_remainder_share_bp() {
+    let (env, creator, contributor1, verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contributor3 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 10_000;
+    let (bounty_id, _) = make_multi_bounty_with_token(
+        &client, &env, &creator, &verifier, "three_rem", reward_amount, 3,
+    );
+
+    client.claim_bounty(&contributor1, &bounty_id);
+    client.claim_bounty(&contributor2, &bounty_id);
+    client.claim_bounty(&contributor3, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    let (_, share1) = bounty.assignees.get(0).unwrap();
+    let (_, share2) = bounty.assignees.get(1).unwrap();
+    let (_, share3) = bounty.assignees.get(2).unwrap();
+
+    // base_share = 3333, remainder = 1 → first gets 3334
+    assert_eq!(share1, 3_334u32, "first assignee absorbs remainder");
+    assert_eq!(share2, 3_333u32, "second assignee base share");
+    assert_eq!(share3, 3_333u32, "third assignee base share");
+    assert_eq!(
+        share1 + share2 + share3,
+        10_000u32,
+        "share_bp sum is exactly 10_000"
+    );
+}
+
+/// Three assignees with reward_amount=10_000:
+/// payout_i = reward_amount * share_bp_i / 10_000
+/// First:  10_000 * 3_334 / 10_000 = 3_334
+/// Second: 10_000 * 3_333 / 10_000 = 3_333
+/// Third:  10_000 * 3_333 / 10_000 = 3_333
+/// Sum = 9_999 — one token is "lost" to integer division in the payout
+/// formula (share_bp sums exactly to 10_000, but the intermediate
+/// multiplication can still produce a truncation loss when reward_amount is
+/// not itself a multiple of 10_000 / num_assignees).
+///
+/// Note: with reward_amount = 10_000 and share_bp = 3_334 / 3_333 the loss
+/// is zero here (10_000 * k / 10_000 = k exactly), so the sum IS 10_000.
+#[test]
+fn test_three_assignees_payout_sum_with_divisible_reward() {
+    let (env, creator, contributor1, verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contributor3 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // reward_amount = 10_000 is exactly divisible in the payout formula:
+    // 10_000 * 3334 / 10_000 = 3334 (exact), 10_000 * 3333 / 10_000 = 3333 (exact)
+    let reward_amount: i128 = 10_000;
+    let (bounty_id, token_addr) = make_multi_bounty_with_token(
+        &client, &env, &creator, &verifier, "three_div", reward_amount, 3,
+    );
+
+    client.claim_bounty(&contributor1, &bounty_id);
+    client.claim_bounty(&contributor2, &bounty_id);
+    client.claim_bounty(&contributor3, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    let payout1 = token_client.balance(&contributor1);
+    let payout2 = token_client.balance(&contributor2);
+    let payout3 = token_client.balance(&contributor3);
+
+    assert_eq!(payout1, 3_334, "first assignee payout (with remainder share)");
+    assert_eq!(payout2, 3_333, "second assignee payout");
+    assert_eq!(payout3, 3_333, "third assignee payout");
+    assert_eq!(
+        payout1 + payout2 + payout3,
+        reward_amount,
+        "payout sum equals reward_amount when reward is divisible by 10_000"
+    );
+}
+
+/// Three assignees with an uneven reward_amount (9_999):
+/// Each share_bp: 3_334, 3_333, 3_333 (same as above).
+/// payout = 9_999 * share_bp / 10_000 (integer division truncates):
+///   First:  9_999 * 3_334 / 10_000 = 33_326_666 / 10_000 = 3_332 (truncated)
+///   Second: 9_999 * 3_333 / 10_000 = 33_323_667 / 10_000 = 3_332 (truncated)
+///   Third:  9_999 * 3_333 / 10_000 = 33_323_667 / 10_000 = 3_332 (truncated)
+///   Sum = 9_996 — 3 tokens lost to integer division in the payout formula.
+///
+/// This test documents the known integer-division remainder loss so future
+/// implementors can choose whether to recover the dust (e.g. send it to the
+/// primary assignee or back to the verifier).
+#[test]
+fn test_three_assignees_payout_integer_division_loss_documented() {
+    let (env, creator, contributor1, verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contributor3 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Use 9_999 — not perfectly divisible by 3_333/3_334 in the payout formula.
+    let reward_amount: i128 = 9_999;
+    let (bounty_id, token_addr) = make_multi_bounty_with_token(
+        &client, &env, &creator, &verifier, "three_loss", reward_amount, 3,
+    );
+
+    client.claim_bounty(&contributor1, &bounty_id);
+    client.claim_bounty(&contributor2, &bounty_id);
+    client.claim_bounty(&contributor3, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    let payout1 = token_client.balance(&contributor1);
+    let payout2 = token_client.balance(&contributor2);
+    let payout3 = token_client.balance(&contributor3);
+
+    // 9_999 * 3_334 / 10_000 = 3_332 (truncated from 3_332.6666)
+    assert_eq!(payout1, 3_332, "first assignee payout (truncated)");
+    // 9_999 * 3_333 / 10_000 = 3_332 (truncated from 3_332.3667)
+    assert_eq!(payout2, 3_332, "second assignee payout (truncated)");
+    assert_eq!(payout3, 3_332, "third assignee payout (truncated)");
+
+    let total_paid = payout1 + payout2 + payout3;
+    let integer_division_loss = reward_amount - total_paid;
+
+    // Document the known loss: 9_999 - 9_996 = 3 tokens unaccounted for.
+    assert_eq!(
+        integer_division_loss,
+        3,
+        "integer-division loss is 3 tokens for reward_amount=9_999 with 3 assignees"
+    );
+    // The total paid is strictly less than reward_amount in this case.
+    assert!(
+        total_paid < reward_amount,
+        "payout sum is less than reward_amount due to integer division"
+    );
+}
+
+/// Two assignees with uneven reward_amount=9_999:
+/// base_share = 5_000, remainder = 0 → both get 5_000.
+/// payout = 9_999 * 5_000 / 10_000 = 4_999 (truncated from 4_999.5).
+/// Sum = 9_998 — 1 token lost to truncation.
+#[test]
+fn test_two_assignees_uneven_reward_integer_division_loss() {
+    let (env, creator, contributor1, verifier) = setup_test();
+    let contributor2 = Address::generate(&env);
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 9_999;
+    let (bounty_id, token_addr) = make_multi_bounty_with_token(
+        &client, &env, &creator, &verifier, "two_odd", reward_amount, 2,
+    );
+
+    client.claim_bounty(&contributor1, &bounty_id);
+    client.claim_bounty(&contributor2, &bounty_id);
+    client.complete_bounty(&verifier, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    let payout1 = token_client.balance(&contributor1);
+    let payout2 = token_client.balance(&contributor2);
+
+    // 9_999 * 5_000 / 10_000 = 4_999 (truncated from 4_999.5)
+    assert_eq!(payout1, 4_999, "first assignee payout");
+    assert_eq!(payout2, 4_999, "second assignee payout");
+
+    let total_paid = payout1 + payout2;
+    let integer_division_loss = reward_amount - total_paid;
+
+    // Document: 1 token lost.
+    assert_eq!(
+        integer_division_loss,
+        1,
+        "integer-division loss is 1 token for reward_amount=9_999 with 2 assignees"
+    );
+}
