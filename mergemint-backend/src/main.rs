@@ -29,10 +29,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::{
-    routing::post,
-    Router,
-};
+use axum::{routing::post, Router};
 use tower_http::{
     limit::RequestBodyLimitLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -49,7 +46,7 @@ use db::new_shared_db;
 use routes::tx::{resolve_dispute, self_claim, AppState};
 
 /// Maximum allowed request body size (1 MiB).
-const MAX_BODY_BYTES: usize = 1 * 1024 * 1024;
+const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 /// Maximum wall-clock time allowed for a single request, including body reads
 /// and handler execution.
@@ -74,7 +71,9 @@ async fn main() {
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
             // Default: info-level for our crate, warn for noisy deps.
-            "mergemint_backend=info,tower_http=debug,axum::rejection=trace".parse().unwrap()
+            "mergemint_backend=info,tower_http=debug,axum::rejection=trace"
+                .parse()
+                .unwrap()
         }))
         .with(fmt::layer())
         .init();
@@ -135,7 +134,5 @@ async fn main() {
         "mergemint-backend listening"
     );
 
-    axum::serve(listener, app)
-        .await
-        .expect("server error");
+    axum::serve(listener, app).await.expect("server error");
 }

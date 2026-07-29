@@ -51,7 +51,6 @@ mod tests {
     #[test]
     fn it_compiles() {}
 
-
     #[test]
     fn test_acquire_db_normal() {
         let db = new_shared_db();

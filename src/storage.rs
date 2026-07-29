@@ -128,6 +128,17 @@ pub fn set_bounties_by_status(env: &Env, status: &Symbol, bounties: &Vec<BountyI
         .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
 }
 
+pub fn get_status_count(env: &Env, status: &Symbol) -> u32 {
+    let key = DataKey::StatusCount(status.clone());
+    let count: Option<u32> = env.storage().persistent().get(&key);
+    if count.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
+    }
+    count.unwrap_or(0)
+}
+
 pub fn set_status_count(env: &Env, status: &Symbol, count: &u32) {
     let key = DataKey::StatusCount(status.clone());
     env.storage().persistent().set(&key, count);
@@ -141,6 +152,7 @@ pub fn add_bounty_to_status(env: &Env, bounty_id: &BountyId, status: &Symbol) {
     let is_new = current.iter().all(|id| id != *bounty_id);
     if is_new {
         current.push_back(bounty_id.clone());
+        set_bounties_by_status(env, status, &current);
         increment_status_count(env, status);
     }
 }
@@ -160,12 +172,6 @@ pub fn remove_bounty_from_status(env: &Env, bounty_id: &BountyId, status: &Symbo
         decrement_status_count(env, status);
     }
     set_bounties_by_status(env, status, &updated);
-    if updated.len() < current.len() {
-        let count = get_status_count(env, status);
-        if count > 0 {
-            set_status_count(env, status, &(count - 1));
-        }
-    }
 }
 
 pub fn move_bounty_status(

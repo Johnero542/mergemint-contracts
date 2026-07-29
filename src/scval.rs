@@ -178,13 +178,8 @@ mod tests {
         );
 
         // Decode
-        let (dec_addr, dec_rep, dec_earned, dec_contrib, dec_claims) = decode_contributor(
-            &enc_addr,
-            enc_rep,
-            enc_earned,
-            enc_contrib,
-            enc_claims,
-        );
+        let (dec_addr, dec_rep, dec_earned, dec_contrib, dec_claims) =
+            decode_contributor(&enc_addr, enc_rep, enc_earned, enc_contrib, enc_claims);
 
         // Verify round-trip
         assert_eq!(dec_addr, address);
@@ -232,7 +227,8 @@ mod tests {
         };
 
         // Encode the full bounty
-        let (enc_creator, enc_amount, enc_token, enc_assignees, enc_status) = encode_bounty(&bounty);
+        let (enc_creator, enc_amount, enc_token, enc_assignees, enc_status) =
+            encode_bounty(&bounty);
 
         // Verify encoded values match original
         assert_eq!(enc_creator, creator);
@@ -272,7 +268,8 @@ mod tests {
         };
 
         // Encode the full contributor
-        let (enc_addr, enc_rep, enc_earned, enc_contrib, enc_claims) = encode_contributor(&contributor);
+        let (enc_addr, enc_rep, enc_earned, enc_contrib, enc_claims) =
+            encode_contributor(&contributor);
 
         // Verify encoded values match original
         assert_eq!(enc_addr, address);
@@ -282,13 +279,8 @@ mod tests {
         assert_eq!(enc_claims, 3);
 
         // Verify round-trip
-        let (dec_addr, dec_rep, dec_earned, dec_contrib, dec_claims) = decode_contributor(
-            &enc_addr,
-            enc_rep,
-            enc_earned,
-            enc_contrib,
-            enc_claims,
-        );
+        let (dec_addr, dec_rep, dec_earned, dec_contrib, dec_claims) =
+            decode_contributor(&enc_addr, enc_rep, enc_earned, enc_contrib, enc_claims);
 
         assert_eq!(dec_addr, address);
         assert_eq!(dec_rep, 250);
