@@ -46,6 +46,12 @@ pub fn acquire_db(db: &SharedDb) -> std::sync::MutexGuard<'_, DbStore> {
 mod tests {
     use super::*;
 
+    /// Placeholder test — verifies that the test harness compiles and is wired
+    /// correctly.  See issue #487.
+    #[test]
+    fn it_compiles() {}
+
+
     #[test]
     fn test_acquire_db_normal() {
         let db = new_shared_db();
