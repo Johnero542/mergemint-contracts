@@ -70,3 +70,16 @@ pub fn emit_dispute_resolved(
         (bounty_id.clone(), resolution.clone()),
     );
 }
+
+pub fn emit_milestone_completed(
+    env: &Env,
+    bounty_id: &BountyId,
+    milestone_index: u32,
+    amount: &i128,
+) {
+    let topic = Symbol::new(env, "milestone_completed");
+    env.events().publish(
+        (topic, milestone_index),
+        (bounty_id.clone(), *amount),
+    );
+}

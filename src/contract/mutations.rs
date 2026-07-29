@@ -72,6 +72,19 @@ fn complete_bounty_inner(env: Env, verifier: Address, bounty_id: BountyId) {
         fail(ContractError::BountyHasNoAssignee);
     }
 
+    if !bounty.milestones.is_empty() {
+        if !bounty.milestones.iter().all(|m| m.completed) {
+            fail(ContractError::NotAllMilestonesCompleted);
+        }
+        let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
+        let previous_status = bounty.status.clone();
+        bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+        storage::store_bounty(&env, &bounty_id, &bounty);
+        storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+        events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
+        return;
+    }
+
     let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
     let previous_status = bounty.status.clone();
     bounty.status = Symbol::new(&env, STATUS_COMPLETED);
@@ -108,6 +121,8 @@ impl MergeMintContract {
     /// * `approval_threshold` - Number of unique approvals required before completion executes
     ///   automatically. Only meaningful when `required_verifiers` is `Some`; must not exceed the
     ///   number of verifiers.
+    /// * `milestones` - Optional staged payouts. When empty, the bounty is all-or-nothing.
+    ///   When provided, `reward_amount` must equal the sum of all `milestone.reward` values.
     ///
     /// # Returns
     /// The newly generated `BountyId` that uniquely identifies this bounty.
@@ -119,6 +134,8 @@ impl MergeMintContract {
     /// * If `max_assignees < 1` (`ContractError::MaxAssigneesMustBePositive`).
     /// * If `approval_threshold` exceeds `required_verifiers.len()` when set
     ///   (`ContractError::ApprovalThresholdExceedsVerifiers`).
+    /// * If `reward_token` is not a valid Soroban token contract.
+    /// * If `milestones` is non-empty and their rewards do not sum to `reward_amount`.
     ///
     /// # Authorization
     /// Requires auth from `creator`.
@@ -135,9 +152,8 @@ impl MergeMintContract {
         max_assignees: u32,
         required_verifiers: Option<Vec<Address>>,
         approval_threshold: u32,
+        milestones: Vec<Milestone>,
     ) -> BountyId {
-        // Validated first, ahead of auth and all storage interaction: a
-        // non-positive reward is a malformed request regardless of who is asking.
         if reward_amount <= 0 {
             fail(ContractError::RewardMustBePositive);
         }
@@ -146,24 +162,33 @@ impl MergeMintContract {
             fail(ContractError::RewardBelowMinimum);
         }
 
-        // Validate tags length before auth to fail fast on malformed input.
         if tags.len() > 5 {
             fail(ContractError::TooManyTags);
         }
 
-        // Validate max_assignees before auth: at least 1 is required.
         if max_assignees < 1 {
             fail(ContractError::MaxAssigneesMustBePositive);
         }
 
-        // Validate multi-sig params: threshold must not exceed verifier count when set.
         if let Some(ref verifiers) = required_verifiers {
             if approval_threshold > verifiers.len() {
                 fail(ContractError::ApprovalThresholdExceedsVerifiers);
             }
         }
 
-        // Reject deadlines already in the past at creation time.
+        let token = TokenClient::new(&env, &reward_token);
+        token.balance(&env.current_contract_address());
+
+        if !milestones.is_empty() {
+            let mut total: i128 = 0;
+            for m in milestones.iter() {
+                total += m.reward;
+            }
+            if total != reward_amount {
+                fail(ContractError::MilestoneRewardsMismatch);
+            }
+        }
+
         if let Some(deadline) = deadline {
             if env.ledger().sequence() > deadline {
                 fail(ContractError::BountyDeadlinePassed);
@@ -187,6 +212,7 @@ impl MergeMintContract {
             required_verifiers,
             approval_threshold,
             tags,
+            milestones,
         };
 
         storage::store_bounty(&env, &id, &bounty);
@@ -309,6 +335,77 @@ impl MergeMintContract {
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
     }
 
+    /// Complete a single milestone and pay out its reward.
+    ///
+    /// Transfers `milestone.reward` from `verifier` to each assignee proportionally.
+    /// The milestone is marked `completed` so it cannot be paid out twice.
+    ///
+    /// # Arguments
+    /// * `verifier` - Wallet that holds the tokens and initiates the payout.
+    /// * `bounty_id` - The bounty containing the milestone.
+    /// * `milestone_index` - Zero-based index of the milestone to complete.
+    ///
+    /// # Panics
+    /// * If `bounty_id` does not exist.
+    /// * If the bounty status is not `"in_progress"`.
+    /// * If the bounty has no assignees.
+    /// * If `milestone_index` is out of bounds.
+    /// * If the milestone is already completed.
+    /// * If `verifier` is one of the bounty assignees.
+    ///
+    /// # Authorization
+    /// `verifier.require_auth()` is the **first** operation.
+    pub fn complete_milestone(
+        env: Env,
+        verifier: Address,
+        bounty_id: BountyId,
+        milestone_index: u32,
+    ) {
+        verifier.require_auth();
+
+        let mut bounty = match storage::get_bounty(&env, &bounty_id) {
+            Some(b) => b,
+            None => fail(ContractError::BountyNotFound),
+        };
+
+        if bounty.status != Symbol::new(&env, STATUS_IN_PROGRESS) {
+            fail(ContractError::BountyNotInProgress);
+        }
+
+        if bounty.assignees.is_empty() {
+            fail(ContractError::BountyHasNoAssignee);
+        }
+
+        let idx = milestone_index as usize;
+        if idx >= bounty.milestones.len() {
+            fail(ContractError::InvalidMilestoneIndex);
+        }
+
+        let mut milestone = bounty.milestones.get(idx).unwrap().clone();
+        if milestone.completed {
+            fail(ContractError::MilestoneAlreadyCompleted);
+        }
+
+        for (assignee, _) in bounty.assignees.iter() {
+            if assignee == verifier {
+                fail(ContractError::VerifierCannotBeAssignee);
+            }
+        }
+
+        milestone.completed = true;
+        bounty.milestones.set(idx, milestone);
+
+        let token = TokenClient::new(&env, &bounty.reward_token);
+        distribute_payout(
+            &env, &bounty_id, &bounty.assignees, &verifier, &token, milestone.reward,
+        );
+
+        let completed_milestone = bounty.milestones.get(idx).unwrap();
+        events::emit_milestone_completed(&env, &bounty_id, milestone_index, &completed_milestone.reward);
+
+        storage::store_bounty(&env, &bounty_id, &bounty);
+    }
+
     /// Complete a bounty and distribute the reward.
     ///
     /// Transfers `reward_amount` from `verifier` to each assignee proportionally
@@ -367,6 +464,19 @@ impl MergeMintContract {
             if assignee == verifier {
                 fail(ContractError::VerifierCannotBeAssignee);
             }
+        }
+
+        if !bounty.milestones.is_empty() {
+            if !bounty.milestones.iter().all(|m| m.completed) {
+                fail(ContractError::NotAllMilestonesCompleted);
+            }
+            let previous_status = bounty.status.clone();
+            bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+            storage::store_bounty(&env, &bounty_id, &bounty);
+            storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+            let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
+            events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
+            return;
         }
 
         // Checks-effects-interactions pattern:
@@ -438,6 +548,19 @@ impl MergeMintContract {
         let threshold = if bounty.approval_threshold == 0 { 1 } else { bounty.approval_threshold };
 
         if approval_count >= threshold {
+            if !bounty.milestones.is_empty() {
+                if !bounty.milestones.iter().all(|m| m.completed) {
+                    fail(ContractError::NotAllMilestonesCompleted);
+                }
+                let previous_status = bounty.status.clone();
+                bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+                storage::store_bounty(&env, &bounty_id, &bounty);
+                storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+                let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
+                events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
+                return;
+            }
+
             let token = TokenClient::new(&env, &bounty.reward_token);
             distribute_payout(
                 &env, &bounty_id, &bounty.assignees, &verifier, &token, bounty.reward_amount,
@@ -526,29 +649,39 @@ impl MergeMintContract {
                 fail(ContractError::BountyHasNoAssignee);
             }
 
-            let token = TokenClient::new(&env, &bounty.reward_token);
+            if !bounty.milestones.is_empty() {
+                if !bounty.milestones.iter().all(|m| m.completed) {
+                    fail(ContractError::NotAllMilestonesCompleted);
+                }
+                let previous_status = bounty.status.clone();
+                bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+                storage::store_bounty(&env, &bounty_id, &bounty);
+                storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
+            } else {
+                let token = TokenClient::new(&env, &bounty.reward_token);
 
-            for (assignee, share_bp) in bounty.assignees.iter() {
-                let payout =
-                    (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
-                token.transfer(&arbitrator, &assignee, &payout);
+                for (assignee, share_bp) in bounty.assignees.iter() {
+                    let payout =
+                        (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
+                    token.transfer(&arbitrator, &assignee, &payout);
 
-                let mut contrib = storage::get_contributor(&env, &assignee)
-                    .unwrap_or_else(|| Contributor::new(assignee.clone()));
+                    let mut contrib = storage::get_contributor(&env, &assignee)
+                        .unwrap_or_else(|| Contributor::new(assignee.clone()));
 
-                contrib.reputation += 10;
-                contrib.total_earned += payout;
-                contrib.contribution_count += 1;
-                decrement_active_claims(&mut contrib);
+                    contrib.reputation += 10;
+                    contrib.total_earned += payout;
+                    contrib.contribution_count += 1;
+                    decrement_active_claims(&mut contrib);
 
-                storage::store_contributor(&env, &assignee, &contrib);
-                events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+                    storage::store_contributor(&env, &assignee, &contrib);
+                    events::emit_reward_paid(&env, &bounty_id, &assignee, &payout);
+                }
+
+                let previous_status = bounty.status.clone();
+                bounty.status = Symbol::new(&env, STATUS_COMPLETED);
+                storage::store_bounty(&env, &bounty_id, &bounty);
+                storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
             }
-
-            let previous_status = bounty.status.clone();
-            bounty.status = Symbol::new(&env, STATUS_COMPLETED);
-            storage::store_bounty(&env, &bounty_id, &bounty);
-            storage::move_bounty_status(&env, &bounty_id, &previous_status, &bounty.status);
         } else if resolution == resolve_cancel {
             // Refund escrowed reward to creator before mutating status.
             let token = TokenClient::new(&env, &bounty.reward_token);
