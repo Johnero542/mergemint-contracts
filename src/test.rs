@@ -2,9 +2,9 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::Address as _,
-    token::{StellarAssetClient, TokenClient},
-    Address, Env, Symbol, Vec,
+    testutils::{Address as _, Ledger as _},
+    token::StellarAssetClient,
+    Address, Env, String, Symbol, Vec,
 };
 
 use crate::contract::MergeMintContract;
@@ -35,15 +35,50 @@ fn make_bounty(
     client.create_bounty(
         creator,
         &Symbol::new(env, tag),
-        &Symbol::new(env, "desc"),
+        &String::from_str(env, "desc"),
         &1000,
         &Address::generate(env),
         &0,
         &deadline,
         &Vec::new(env),
-        &None,
         &1,
     )
+}
+
+/// Create a Stellar Asset Contract token and mint `amount` to `to`.
+/// Returns the token contract address.
+fn create_token_and_mint(env: &Env, admin: &Address, to: &Address, amount: i128) -> Address {
+    let sac = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_addr = sac.address();
+    let token_admin = StellarAssetClient::new(env, &token_addr);
+    token_admin.mint(to, &amount);
+    token_addr
+}
+
+/// Create a bounty using a real token contract with `reward_amount` minted to the contract.
+/// Returns both the bounty ID and the token address.
+fn make_bounty_with_token(
+    client: &MergeMintContractClient,
+    env: &Env,
+    creator: &Address,
+    contract_id: &Address,
+    tag: &str,
+    reward_amount: i128,
+    deadline: Option<u32>,
+) -> (crate::types::BountyId, Address) {
+    // Use creator as token admin for simplicity (mock-all-auths applies).
+    let token_addr = create_token_and_mint(env, creator, contract_id, reward_amount);
+    let bounty_id = client.create_bounty(
+        creator,
+        &Symbol::new(env, tag),
+        &Symbol::new(env, "desc"),
+        &reward_amount,
+        &token_addr,
+        &0,
+        &deadline,
+        &Vec::new(env),
+    );
+    (bounty_id, token_addr)
 }
 
 // ===========================================================================
@@ -64,13 +99,12 @@ fn test_tags_stored_and_retrieved() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "tagged"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
         &None,
         &tags,
-        &None,
         &1,
     );
 
@@ -90,13 +124,12 @@ fn test_empty_tags_valid() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "no_tags"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
         &None,
         &Vec::new(&env),
-        &None,
         &1,
     );
 
@@ -121,13 +154,12 @@ fn test_five_tags_allowed() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "max_tags"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
         &None,
         &tags,
-        &None,
         &1,
     );
 
@@ -151,13 +183,12 @@ fn test_too_many_tags_panics() {
     client.create_bounty(
         &creator,
         &Symbol::new(&env, "overtags"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
         &None,
         &tags,
-        &None,
         &1,
     );
 }
@@ -268,7 +299,7 @@ fn test_contract_error_messages() {
     assert_eq!(message(ContractError::BountyNotOpen), "bounty not open");
     assert_eq!(
         message(ContractError::BountyNotInProgress),
-        "bounty not in progress"
+        "bounty is not in progress"
     );
     assert_eq!(
         message(ContractError::BountyHasNoAssignee),
@@ -281,6 +312,14 @@ fn test_contract_error_messages() {
     assert_eq!(
         message(ContractError::NotBountyCreator),
         "not bounty creator"
+    );
+    assert_eq!(
+        message(ContractError::VerifierCannotBeAssignee),
+        "verifier cannot be the assignee"
+    );
+    assert_eq!(
+        message(ContractError::CreatorCannotClaim),
+        "creator cannot claim"
     );
     assert_eq!(
         message(ContractError::ContributorHasActiveClaim),
@@ -311,6 +350,22 @@ fn test_contract_error_messages() {
         message(ContractError::ReputationTooLow),
         "contributor reputation is too low"
     );
+    assert_eq!(
+        message(ContractError::VerifierNotAuthorized),
+        "verifier is not in the required verifiers list"
+    );
+    assert_eq!(
+        message(ContractError::AlreadyApproved),
+        "verifier has already approved this bounty"
+    );
+    assert_eq!(
+        message(ContractError::BountyNotDisputed),
+        "bounty is not in disputed status"
+    );
+    assert_eq!(
+        message(ContractError::NotArbitrator),
+        "caller is not authorized to resolve this dispute"
+    );
 }
 
 /// ContractError::TooManyTags is wired to the correct panic message.
@@ -330,6 +385,53 @@ fn test_fail_bounty_is_disputed_message() {
 }
 
 // ===========================================================================
+// Issue 435 — reject past deadlines at creation time
+// ===========================================================================
+
+/// Creating a bounty with a deadline already in the past must panic.
+#[test]
+#[should_panic(expected = "bounty deadline passed")]
+fn test_create_bounty_rejects_past_deadline() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Ledger sequence starts at 0; set to 100 so a deadline of 50 is in the past.
+    env.ledger().set_sequence_number(100);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "past_dl"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &Some(50),
+        &Vec::new(&env),
+    );
+}
+
+/// Creating a bounty with a future deadline must succeed.
+#[test]
+fn test_create_bounty_accepts_future_deadline() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Ledger sequence starts at 0; a deadline of 100 is in the future.
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "future_dl"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &Some(100),
+        &Vec::new(&env),
+    );
+}
+
+// ===========================================================================
 // Existing tests — kept clean and compiling
 // ===========================================================================
 
@@ -344,13 +446,12 @@ fn test_create_bounty() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "test_b"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &reward_amount,
         &reward_token,
         &0,
         &None,
         &Vec::new(&env),
-        &None,
         &1,
     );
 
@@ -361,11 +462,105 @@ fn test_create_bounty() {
 
     let meta = client.get_bounty_meta(&bounty_id).unwrap();
     assert_eq!(meta.title, Symbol::new(&env, "test_b"));
+    assert_eq!(
+        meta.description,
+        String::from_str(&env, "desc")
+    );
+}
+
+// ===========================================================================
+// Issue 449 — create_bounty rejects non-positive reward_amount
+// ===========================================================================
+
+/// Creating a bounty with reward_amount = 0 must panic.
+#[test]
+#[should_panic(expected = "reward_amount must be positive")]
+fn test_create_bounty_rejects_zero_reward() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "zero_rew"),
+        &Symbol::new(&env, "desc"),
+        &0,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+}
+
+/// Creating a bounty with a negative reward_amount must panic.
+#[test]
+#[should_panic(expected = "reward_amount must be positive")]
+fn test_create_bounty_rejects_negative_reward() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "neg_rew"),
+        &Symbol::new(&env, "desc"),
+        &(-50),
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+}
+
+/// Creating a bounty with reward_amount below MIN_REWARD_AMOUNT (100) must panic.
+#[test]
+#[should_panic(expected = "reward_amount must be positive")]
+fn test_create_bounty_rejects_below_minimum_reward() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "small_rew"),
+        &Symbol::new(&env, "desc"),
+        &50,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
 }
 
 #[test]
 fn test_claim_bounty() {
     let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "bounty_1"),
+        &String::from_str(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &0,
+        &None,
+        &Vec::new(&env),
+        &1,
+    );
+    client.claim_bounty(&contributor, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    let (assignee_addr, share) = bounty.assignees.get(0).unwrap();
+    assert_eq!(assignee_addr, contributor);
+    assert_eq!(share, 10_000u32);
+}
+
+#[test]
+#[should_panic(expected = "creator cannot claim")]
+fn test_creator_cannot_claim_own_bounty() {
+    let (env, creator, _contributor, _verifier) = setup_test();
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
@@ -378,15 +573,8 @@ fn test_claim_bounty() {
         &0,
         &None,
         &Vec::new(&env),
-        &None,
-        &1,
     );
-    client.claim_bounty(&contributor, &bounty_id);
-
-    let bounty = client.get_bounty(&bounty_id).unwrap();
-    let (assignee_addr, share) = bounty.assignees.get(0).unwrap();
-    assert_eq!(assignee_addr, contributor);
-    assert_eq!(share, 10_000u32);
+    client.claim_bounty(&creator, &bounty_id);
 }
 
 #[test]
@@ -400,26 +588,24 @@ fn test_bounty_count() {
     client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_a"),
-        &Symbol::new(&env, "desc_a"),
+        &String::from_str(&env, "desc_a"),
         &100,
         &reward_token,
         &0,
         &None,
         &Vec::new(&env),
-        &None,
         &1,
     );
     assert_eq!(client.get_bounty_count(), 1);
     client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_b"),
-        &Symbol::new(&env, "desc_b"),
+        &String::from_str(&env, "desc_b"),
         &200,
         &reward_token,
         &0,
         &None,
         &Vec::new(&env),
-        &None,
         &1,
     );
     assert_eq!(client.get_bounty_count(), 2);
@@ -521,6 +707,105 @@ fn test_second_contributor_cannot_claim_full_bounty() {
 }
 
 // ===========================================================================
+// Issue 451 — claim_bounty deadline enforcement
+// ===========================================================================
+
+/// Claiming a bounty whose deadline has passed must panic.
+#[test]
+#[should_panic(expected = "bounty deadline passed")]
+fn test_claim_bounty_after_deadline_panics() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create a bounty with a deadline at ledger sequence 50.
+    let bounty_id = make_bounty(&client, &env, &creator, "dl_claim", Some(50));
+
+    // Advance ledger past the deadline.
+    env.ledger().set_sequence_number(100);
+
+    // Claiming must fail — deadline has passed.
+    client.claim_bounty(&contributor, &bounty_id);
+}
+
+/// Claiming a bounty before its deadline must succeed.
+#[test]
+fn test_claim_bounty_before_deadline_succeeds() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create a bounty with a deadline at ledger sequence 100.
+    let bounty_id = make_bounty(&client, &env, &creator, "dl_ok", Some(100));
+
+    // Ledger is still at 0 — deadline is in the future.
+    client.claim_bounty(&contributor, &bounty_id);
+
+    let bounty = client.get_bounty(&bounty_id).unwrap();
+    assert_eq!(bounty.status, Symbol::new(&env, "in_progress"));
+}
+
+// ===========================================================================
+// Issue 452 — claim_bounty minimum-reputation rejection
+// ===========================================================================
+
+/// Claiming a bounty with min_reputation > 0 as a 0-reputation contributor must panic.
+#[test]
+#[should_panic(expected = "contributor reputation is too low")]
+fn test_claim_bounty_rejects_low_reputation() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create a bounty with min_reputation = 10.
+    client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "rep_b"),
+        &Symbol::new(&env, "desc"),
+        &1000,
+        &Address::generate(&env),
+        &10,
+        &None,
+        &Vec::new(&env),
+    );
+
+    let bounty_id = client.get_bounties_by_creator(&creator).get(0).unwrap();
+    // Contributor has 0 reputation — must be rejected.
+    client.claim_bounty(&contributor, &bounty_id);
+}
+
+// ===========================================================================
+// Issue 455 — cancel_bounty rejection paths
+// ===========================================================================
+
+/// Cancelling a bounty as a non-creator must panic.
+#[test]
+#[should_panic(expected = "not bounty creator")]
+fn test_cancel_bounty_non_creator_fails() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "cancel_nc", None);
+    // Contributor is not the creator — must be rejected.
+    client.cancel_bounty(&contributor, &bounty_id);
+}
+
+/// Cancelling a bounty that is already claimed (in_progress) must panic.
+#[test]
+#[should_panic(expected = "bounty not open")]
+fn test_cancel_bounty_claimed_bounty_fails() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "cancel_cl", None);
+    client.claim_bounty(&contributor, &bounty_id);
+    // Bounty is now in_progress — cancel must fail.
+    client.cancel_bounty(&creator, &bounty_id);
+}
+
+// ===========================================================================
 // Status index
 // ===========================================================================
 
@@ -543,7 +828,9 @@ fn test_status_index_moves_on_cancel() {
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
-    let bounty_id = make_bounty(&client, &env, &creator, "bounty_z", None);
+    let (bounty_id, _token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "bounty_z", 1000, None,
+    );
     client.cancel_bounty(&creator, &bounty_id);
 
     let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
@@ -551,6 +838,79 @@ fn test_status_index_moves_on_cancel() {
     assert_eq!(open_ids.len(), 0);
     assert_eq!(cancelled_ids.len(), 1);
     assert_eq!(cancelled_ids.get(0).unwrap(), bounty_id);
+}
+
+// ===========================================================================
+// Status count (issue #443)
+// ===========================================================================
+
+/// get_status_count returns 0 for a status with no bounties.
+#[test]
+fn test_status_count_initial_zero() {
+    let (env, _creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "completed")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 0);
+}
+
+/// get_status_count returns 1 after creating a single bounty (open status).
+#[test]
+fn test_status_count_one_on_create() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let _bounty_id = make_bounty(&client, &env, &creator, "count_one", None);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "completed")), 0);
+}
+
+/// get_status_count reflects the move from open to cancelled after cancel_bounty.
+#[test]
+fn test_status_count_moves_on_cancel() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let bounty_id = make_bounty(&client, &env, &creator, "count_cancel", None);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+
+    client.cancel_bounty(&creator, &bounty_id);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
+}
+
+/// get_status_count correctly tracks multiple bounties across statuses.
+#[test]
+fn test_status_count_multiple_bounties() {
+    let (env, creator, _contributor, verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let id1 = make_bounty(&client, &env, &creator, "count_multi_a", None);
+    let id2 = make_bounty(&client, &env, &creator, "count_multi_b", None);
+    let _id3 = make_bounty(&client, &env, &creator, "count_multi_c", None);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 3);
+
+    // Cancel one
+    client.cancel_bounty(&creator, &id1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 2);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
+
+    // Claim one -> in_progress
+    let _token_addr = Address::generate(&env);
+    client.claim_bounty(&verifier, &id2);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
 }
 
 // ===========================================================================
@@ -584,6 +944,53 @@ fn test_update_contributor_metadata_overwrites() {
 }
 
 // ===========================================================================
+// Batch query: get_bounty_metas
+// ===========================================================================
+
+/// Batch query returns correct metas for known IDs and None for unknown IDs.
+#[test]
+fn test_get_bounty_metas_batch() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let id1 = make_bounty(&client, &env, &creator, "meta1", None);
+    let id2 = make_bounty(&client, &env, &creator, "meta2", None);
+
+    // Use a non-zero pattern for unknown IDs (see Bounty ID generation pitfall:
+    // the first bounty has count=0, producing all zeros)
+    let unknown_id = crate::types::BountyId(soroban_sdk::BytesN::from_array(
+        &env, &[0xffu8; 32],
+    ));
+
+    let mut ids: Vec<crate::types::BountyId> = Vec::new(&env);
+    ids.push_back(id1.clone());
+    ids.push_back(unknown_id.clone());
+    ids.push_back(id2.clone());
+
+    let results = client.get_bounty_metas(&ids);
+    assert_eq!(results.len(), 3);
+
+    // First result: known ID — should be Some
+    match results.get(0).unwrap() {
+        Some(meta) => assert_eq!(meta.title, Symbol::new(&env, "meta1")),
+        None => panic!("expected Some for known ID"),
+    }
+
+    // Second result: unknown ID — should be None
+    match results.get(1).unwrap() {
+        Some(_) => panic!("expected None for unknown ID"),
+        None => {} // expected
+    }
+
+    // Third result: known ID — should be Some
+    match results.get(2).unwrap() {
+        Some(meta) => assert_eq!(meta.title, Symbol::new(&env, "meta2")),
+        None => panic!("expected Some for known ID"),
+    }
+}
+
+// ===========================================================================
 // Security: double-completion guard
 // ===========================================================================
 
@@ -599,13 +1006,12 @@ fn test_double_complete_panics() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "dbl_complete"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
         &None,
         &Vec::new(&env),
-        &None,
         &1,
     );
 
@@ -614,8 +1020,87 @@ fn test_double_complete_panics() {
 }
 
 // ===========================================================================
-// Security: self-verification guard
+// Status count query
 // ===========================================================================
+
+/// get_status_count matches the actual index length for open status after
+/// creating a bounty and cancelling it.
+#[test]
+fn test_status_count_open_on_create() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "open")),
+        0,
+        "no bounties yet"
+    );
+
+    let _bounty_id = make_bounty(&client, &env, &creator, "sc_open", None);
+
+    let open_count = client.get_status_count(&Symbol::new(&env, "open"));
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    assert_eq!(
+        open_count,
+        open_ids.len() as u32,
+        "count matches index length"
+    );
+    assert_eq!(open_count, 1, "exactly one open bounty");
+}
+
+/// Transaction: create → claim → cancel — verify count tracks each transition.
+#[test]
+fn test_status_count_across_transitions() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    // Create: open=1, in_progress=0, cancelled=0
+    let bounty_id = make_bounty(&client, &env, &creator, "sc_trans", None);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 0);
+
+    // Claim: open=0, in_progress=1
+    client.claim_bounty(&contributor, &bounty_id);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "in_progress")), 1);
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "in_progress")),
+        client.get_bounties_by_status(&Symbol::new(&env, "in_progress")).len() as u32,
+    );
+
+    // Cancel is only valid for open bounties, so create a second bounty
+    // and cancel it directly: open=0→1, cancelled=0→1
+    let bounty_id2 = make_bounty(&client, &env, &creator, "sc_trans2", None);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 1);
+    client.cancel_bounty(&creator, &bounty_id2);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 0);
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "cancelled")), 1);
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "cancelled")),
+        client.get_bounties_by_status(&Symbol::new(&env, "cancelled")).len() as u32,
+    );
+}
+
+/// Multiple bounties in the same status are counted correctly.
+#[test]
+fn test_status_count_multiple_bounties() {
+    let (env, creator, _contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let _b1 = make_bounty(&client, &env, &creator, "sc_multi1", None);
+    let _b2 = make_bounty(&client, &env, &creator, "sc_multi2", None);
+    let _b3 = make_bounty(&client, &env, &creator, "sc_multi3", None);
+
+    assert_eq!(client.get_status_count(&Symbol::new(&env, "open")), 3);
+    assert_eq!(
+        client.get_status_count(&Symbol::new(&env, "open")),
+        client.get_bounties_by_status(&Symbol::new(&env, "open")).len() as u32,
+    );
+}
 
 /// The assignee calling complete_bounty as their own verifier must panic.
 #[test]
@@ -628,13 +1113,12 @@ fn test_assignee_cannot_self_verify() {
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "self_verify"),
-        &Symbol::new(&env, "desc"),
+        &String::from_str(&env, "desc"),
         &1000,
         &Address::generate(&env),
         &0,
         &None,
         &Vec::new(&env),
-        &None,
         &1,
     );
 
@@ -645,148 +1129,164 @@ fn test_assignee_cannot_self_verify() {
 }
 
 // ===========================================================================
-// Multi-sig: create_bounty with required_verifiers / approval_threshold
+// Issue 36 — Escrow refund on cancel / expire / dispute-resolve(cancel)
 // ===========================================================================
 
-/// Create a bounty with multi-sig verifiers, claim it, then verify that
-/// approval_threshold approvals trigger auto-completion.
+/// cancel_bounty refunds the escrowed reward to the creator.
 #[test]
-fn test_create_bounty_with_multisig_then_quorum_completes() {
-    let (env, creator, contributor, _verifier) = setup_test();
-    let verifier1 = Address::generate(&env);
-    let verifier2 = Address::generate(&env);
-    let contract_id = env.register(MergeMintContract, ());
-    let client = MergeMintContractClient::new(&env, &contract_id);
-
-    // Register a real Stellar Asset Contract so token.transfer works.
-    // The admin/issuer cannot hold the asset, so use a separate admin address.
-    let token_admin = Address::generate(&env);
-    let token_address = env.register_stellar_asset_contract(token_admin.clone());
-    let sac = StellarAssetClient::new(&env, &token_address);
-    // Both verifiers need balance because the last approver pays the reward.
-    sac.mint(&verifier1, &1000_i128);
-    sac.mint(&verifier2, &1000_i128);
-
-    let mut verifiers: Vec<Address> = Vec::new(&env);
-    verifiers.push_back(verifier1.clone());
-    verifiers.push_back(verifier2.clone());
-
-    let bounty_id = client.create_bounty(
-        &creator,
-        &Symbol::new(&env, "multisig"),
-        &Symbol::new(&env, "desc"),
-        &1000,
-        &token_address,
-        &0,
-        &None,
-        &Vec::new(&env),
-        &Some(verifiers.clone()),
-        &2,
-    );
-
-    // Verify the bounty was stored with the multi-sig config.
-    let bounty = client.get_bounty(&bounty_id).unwrap();
-    assert_eq!(bounty.required_verifiers.unwrap(), verifiers);
-    assert_eq!(bounty.approval_threshold, 2);
-
-    // Claim the bounty.
-    client.claim_bounty(&contributor, &bounty_id);
-
-    // First approval — below threshold, no completion yet.
-    client.approve_completion(&verifier1, &bounty_id);
-
-    // Second approval — reaches threshold, triggers auto-completion.
-    client.approve_completion(&verifier2, &bounty_id);
-
-    // Verify the bounty is now completed.
-    let bounty = client.get_bounty(&bounty_id).unwrap();
-    assert_eq!(bounty.status, Symbol::new(&env, "completed"));
-}
-
-/// Create a bounty with multi-sig, then verify that duplicate votes are rejected.
-#[test]
-#[should_panic(expected = "verifier has already approved this bounty")]
-fn test_approve_completion_duplicate_vote_rejected() {
-    let (env, creator, contributor, _verifier) = setup_test();
-    let verifier1 = Address::generate(&env);
-    let verifier2 = Address::generate(&env);
-    let contract_id = env.register(MergeMintContract, ());
-    let client = MergeMintContractClient::new(&env, &contract_id);
-
-    let mut verifiers: Vec<Address> = Vec::new(&env);
-    verifiers.push_back(verifier1.clone());
-    verifiers.push_back(verifier2.clone());
-
-    let bounty_id = client.create_bounty(
-        &creator,
-        &Symbol::new(&env, "dupvote"),
-        &Symbol::new(&env, "desc"),
-        &1000,
-        &Address::generate(&env),
-        &0,
-        &None,
-        &Vec::new(&env),
-        &Some(verifiers),
-        &2,
-    );
-
-    client.claim_bounty(&contributor, &bounty_id);
-    client.approve_completion(&verifier1, &bounty_id);
-    // Second vote from the same verifier — must panic.
-    client.approve_completion(&verifier1, &bounty_id);
-}
-
-/// approval_threshold exceeding verifier count must panic.
-#[test]
-#[should_panic(expected = "approval threshold exceeds number of required verifiers")]
-fn test_create_bounty_invalid_threshold_panics() {
+fn test_cancel_bounty_refunds_escrow() {
     let (env, creator, _contributor, _verifier) = setup_test();
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
-    let mut verifiers: Vec<Address> = Vec::new(&env);
-    verifiers.push_back(Address::generate(&env));
+    let reward_amount: i128 = 1000;
+    let (bounty_id, token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "refund_cancel", reward_amount, None,
+    );
 
-    client.create_bounty(
-        &creator,
-        &Symbol::new(&env, "bad_threshold"),
-        &Symbol::new(&env, "desc"),
-        &1000,
-        &Address::generate(&env),
-        &0,
-        &None,
-        &Vec::new(&env),
-        &Some(verifiers),
-        &5,
+    // Check contract balance before cancel.
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&contract_id),
+        reward_amount,
+        "contract holds the escrowed reward before cancel"
+    );
+
+    client.cancel_bounty(&creator, &bounty_id);
+
+    // After cancel, the contract balance is 0 (all refunded to creator).
+    assert_eq!(
+        token_client.balance(&contract_id),
+        0,
+        "contract balance is zero after refund"
+    );
+    // The creator received the refund.
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "creator received the refunded reward"
     );
 }
 
-/// A non-verifier calling approve_completion must panic.
+/// expire_bounty refunds the escrowed reward to the creator.
 #[test]
-#[should_panic(expected = "verifier is not in the required verifiers list")]
-fn test_approve_completion_unauthorized_verifier_panics() {
-    let (env, creator, contributor, _verifier) = setup_test();
-    let verifier1 = Address::generate(&env);
-    let unauthorized = Address::generate(&env);
+fn test_expire_bounty_refunds_escrow() {
+    let (env, creator, _contributor, _verifier) = setup_test();
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
-    let mut verifiers: Vec<Address> = Vec::new(&env);
-    verifiers.push_back(verifier1.clone());
+    // Use deadline = 0 and set ledger sequence past it so the bounty is expired.
+    let reward_amount: i128 = 1000;
+    env.ledger().set_sequence_number(100);
+    let (bounty_id, token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "refund_expire", reward_amount, Some(0),
+    );
 
-    let bounty_id = client.create_bounty(
-        &creator,
-        &Symbol::new(&env, "unauth_ver"),
-        &Symbol::new(&env, "desc"),
-        &1000,
-        &Address::generate(&env),
-        &0,
-        &None,
-        &Vec::new(&env),
-        &Some(verifiers),
-        &1,
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&contract_id),
+        reward_amount,
+        "contract holds the escrowed reward before expire"
+    );
+
+    // Any caller can trigger expiry.
+    let caller = Address::generate(&env);
+    client.expire_bounty(&caller, &bounty_id);
+
+    assert_eq!(
+        token_client.balance(&contract_id),
+        0,
+        "contract balance is zero after refund"
+    );
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "creator received the refunded reward"
+    );
+}
+
+/// resolve_dispute with "cancel" resolution refunds the escrowed reward to the creator.
+#[test]
+fn test_resolve_dispute_cancel_refunds_escrow() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 1000;
+    let (bounty_id, token_addr) = make_bounty_with_token(
+        &client, &env, &creator, &contract_id, "refund_disp", reward_amount, None,
     );
 
     client.claim_bounty(&contributor, &bounty_id);
-    client.approve_completion(&unauthorized, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&contract_id),
+        reward_amount,
+        "contract holds the escrowed reward before dispute resolution"
+    );
+
+    // Resolve with "cancel" — should refund to creator.
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "cancel"));
+
+    assert_eq!(
+        token_client.balance(&contract_id),
+        0,
+        "contract balance is zero after refund"
+    );
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "creator received the refunded reward"
+    );
+}
+
+#[test]
+fn test_resolve_dispute_complete_pays_from_arbitrator() {
+    let (env, creator, contributor, _verifier) = setup_test();
+    let contract_id = env.register(MergeMintContract, ());
+    let client = MergeMintContractClient::new(&env, &contract_id);
+
+    let reward_amount: i128 = 1000;
+    let token_addr = create_token_and_mint(&env, &creator, &creator, reward_amount);
+    let bounty_id = client.create_bounty(
+        &creator,
+        &Symbol::new(&env, "resolve_complete"),
+        &Symbol::new(&env, "desc"),
+        &reward_amount,
+        &token_addr,
+        &0,
+        &None,
+        &Vec::new(&env),
+    );
+
+    client.claim_bounty(&contributor, &bounty_id);
+    client.raise_dispute(&creator, &bounty_id);
+
+    let token_client = StellarAssetClient::new(&env, &token_addr);
+    assert_eq!(
+        token_client.balance(&creator),
+        reward_amount,
+        "arbitrator (creator) holds the reward before resolution"
+    );
+    assert_eq!(
+        token_client.balance(&contributor),
+        0,
+        "contributor starts with zero balance"
+    );
+
+    // Resolve with "complete" — arbitrator pays the assignee.
+    client.resolve_dispute(&creator, &bounty_id, &Symbol::new(&env, "complete"));
+
+    assert_eq!(
+        token_client.balance(&creator),
+        0,
+        "arbitrator's balance is zero after paying the assignee"
+    );
+    assert_eq!(
+        token_client.balance(&contributor),
+        reward_amount,
+        "assignee received the full reward from the arbitrator"
+    );
 }
