@@ -164,8 +164,8 @@ impl MergeMintContract {
             status: Symbol::new(&env, STATUS_OPEN),
             min_reputation,
             deadline,
-            required_verifiers: None,
-            approval_threshold: 1,
+            required_verifiers,
+            approval_threshold,
             tags,
         };
 

@@ -692,7 +692,7 @@ fn test_second_claim_rejected_while_active() {
 }
 
 #[test]
-#[should_panic(expected = "bounty already assigned")]
+#[should_panic(expected = "bounty not open")]
 fn test_second_contributor_cannot_claim_full_bounty() {
     let (env, creator, contributor, _verifier) = setup_test();
     let contract_id = env.register(MergeMintContract, ());
