@@ -30,9 +30,20 @@ pub enum DataKey {
     BountyMeta(BountyId),
     Contributor(Address),
     ContributorBounties(Address),
+    /// Legacy single-blob status index — replaced by StatusIndexPage.
+    /// Kept in the enum so existing serialised keys can still be read during a
+    /// migration pass. New code must not write this variant.
     StatusIndex(Symbol),
     StatusCount(Symbol),
+    /// Paged status index shard. `page` is 0-indexed; each shard holds at most
+    /// `storage::PAGE_SIZE` entries. See storage.rs for the layout contract.
+    StatusIndexPage(Symbol, u32),
+    /// Legacy single-blob open-bounties list — replaced by OpenBountiesPage.
     OpenBounties,
+    /// Total number of open bounties (sum across all OpenBountiesPage shards).
+    OpenBountiesCount,
+    /// Paged open-bounties shard. `page` is 0-indexed.
+    OpenBountiesPage(u32),
     Approvals(BountyId),
 }
 

@@ -216,13 +216,13 @@ fn test_get_bounties_by_creator_returns_all() {
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
-    assert_eq!(client.get_bounties_by_creator(&creator).len(), 0);
+    assert_eq!(client.get_bounties_by_creator(&creator, &None, &50).0.len(), 0);
 
     let id1 = make_bounty(&client, &env, &creator, "b1", None);
     let id2 = make_bounty(&client, &env, &creator, "b2", None);
     let id3 = make_bounty(&client, &env, &creator, "b3", None);
 
-    let ids = client.get_bounties_by_creator(&creator);
+    let ids = client.get_bounties_by_creator(&creator, &None, &50).0;
     assert_eq!(ids.len(), 3);
     assert_eq!(ids.get(0).unwrap(), id1);
     assert_eq!(ids.get(1).unwrap(), id2);
@@ -240,8 +240,8 @@ fn test_get_bounties_by_creator_independent_lists() {
     let id1 = make_bounty(&client, &env, &creator, "c1a", None);
     let id2 = make_bounty(&client, &env, &creator2, "c2a", None);
 
-    let list1 = client.get_bounties_by_creator(&creator);
-    let list2 = client.get_bounties_by_creator(&creator2);
+    let list1 = client.get_bounties_by_creator(&creator, &None, &50).0;
+    let list2 = client.get_bounties_by_creator(&creator2, &None, &50).0;
 
     assert_eq!(list1.len(), 1);
     assert_eq!(list1.get(0).unwrap(), id1);
@@ -257,7 +257,7 @@ fn test_get_bounties_by_creator_unknown_address_empty() {
     let client = MergeMintContractClient::new(&env, &contract_id);
 
     let stranger = Address::generate(&env);
-    assert_eq!(client.get_bounties_by_creator(&stranger).len(), 0);
+    assert_eq!(client.get_bounties_by_creator(&stranger, &None, &50).0.len(), 0);
 }
 
 // ===========================================================================
@@ -807,7 +807,7 @@ fn test_claim_bounty_rejects_low_reputation() {
         &1,
     );
 
-    let bounty_id = client.get_bounties_by_creator(&creator).get(0).unwrap();
+    let bounty_id = client.get_bounties_by_creator(&creator, &None, &50).0.get(0).unwrap();
     // Contributor has 0 reputation — must be rejected.
     client.claim_bounty(&contributor, &bounty_id);
 }
@@ -855,7 +855,7 @@ fn test_status_index_open_on_create() {
 
     let bounty_id = make_bounty(&client, &env, &creator, "status_open", None);
 
-    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0;
     assert_eq!(open_ids.len(), 1);
     assert_eq!(open_ids.get(0).unwrap(), bounty_id);
 }
@@ -877,8 +877,8 @@ fn test_status_index_moves_on_cancel() {
     );
     client.cancel_bounty(&creator, &bounty_id);
 
-    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
-    let cancelled_ids = client.get_bounties_by_status(&Symbol::new(&env, "cancelled"));
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0;
+    let cancelled_ids = client.get_bounties_by_status(&Symbol::new(&env, "cancelled"), &None, &50).0;
     assert_eq!(open_ids.len(), 0);
     assert_eq!(cancelled_ids.len(), 1);
     assert_eq!(cancelled_ids.get(0).unwrap(), bounty_id);
@@ -1106,7 +1106,7 @@ fn test_status_count_open_on_create() {
     let _bounty_id = make_bounty(&client, &env, &creator, "sc_open", None);
 
     let open_count = client.get_status_count(&Symbol::new(&env, "open"));
-    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"));
+    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0;
     assert_eq!(open_count, open_ids.len(), "count matches index length");
     assert_eq!(open_count, 1, "exactly one open bounty");
 }
@@ -1137,11 +1137,9 @@ fn test_status_count_across_transitions() {
     assert_eq!(
         client.get_status_count(&Symbol::new(&env, "in_progress")),
         client
-            .get_bounties_by_status(&Symbol::new(&env, "in_progress"))
+            .get_bounties_by_status(&Symbol::new(&env, "in_progress"), &None, &50).0
             .len(),
     );
-
-    // Cancel is only valid for open bounties, so create a second bounty
     // and cancel it directly: open=0→1, cancelled=0→1
     let (bounty_id2, _bounty_id2_token) = make_bounty_with_token(
         &client,
@@ -1159,7 +1157,7 @@ fn test_status_count_across_transitions() {
     assert_eq!(
         client.get_status_count(&Symbol::new(&env, "cancelled")),
         client
-            .get_bounties_by_status(&Symbol::new(&env, "cancelled"))
+            .get_bounties_by_status(&Symbol::new(&env, "cancelled"), &None, &50).0
             .len(),
     );
 }
@@ -1180,7 +1178,7 @@ fn test_status_count_matches_index_length() {
     assert_eq!(
         client.get_status_count(&Symbol::new(&env, "open")),
         client
-            .get_bounties_by_status(&Symbol::new(&env, "open"))
+            .get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0
             .len(),
     );
 }
