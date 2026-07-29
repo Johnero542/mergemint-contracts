@@ -1,4 +1,6 @@
-use soroban_sdk::{contract, contractimpl, token::TokenClient, Address, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, token::TokenClient, Address, BytesN, Env, String, Symbol, Vec,
+};
 
 use crate::errors;
 use crate::errors::{fail, ContractError};

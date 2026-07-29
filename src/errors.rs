@@ -26,6 +26,7 @@ pub enum ContractError {
     AlreadyApproved,
     BountyNotDisputed,
     NotArbitrator,
+    ApprovalThresholdExceedsVerifiers,
 }
 
 /// Convert a `ContractError` to its canonical panic message and panic.
@@ -53,19 +54,16 @@ pub const fn message(e: ContractError) -> &'static str {
         ContractError::DeadlineNotPassed => "deadline has not passed",
         ContractError::ReputationTooLow => "contributor reputation is too low",
         ContractError::TooManyTags => "too many tags",
-        ContractError::MaxAssigneesMustBePositive => {
-            "max_assignees must be at least 1"
-        }
+        ContractError::MaxAssigneesMustBePositive => "max_assignees must be at least 1",
         ContractError::OnlyCreatorOrAssigneeCanDispute => {
             "only creator or assignee can raise dispute"
         }
-        ContractError::VerifierNotAuthorized => {
-            "verifier is not in the required verifiers list"
-        }
+        ContractError::VerifierNotAuthorized => "verifier is not in the required verifiers list",
         ContractError::AlreadyApproved => "verifier has already approved this bounty",
         ContractError::BountyNotDisputed => "bounty is not in disputed status",
-        ContractError::NotArbitrator => {
-            "caller is not authorized to resolve this dispute"
+        ContractError::NotArbitrator => "caller is not authorized to resolve this dispute",
+        ContractError::ApprovalThresholdExceedsVerifiers => {
+            "approval_threshold cannot exceed the number of required_verifiers"
         }
     }
 }

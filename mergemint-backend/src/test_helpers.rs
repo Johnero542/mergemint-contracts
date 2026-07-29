@@ -28,8 +28,6 @@
 // This module is compiled only when `cfg(test)` is active.  It is never
 // included in production binaries.
 
-#![cfg(test)]
-
 use crate::db::{new_shared_db, SharedDb};
 
 /// Return a fresh, empty [`SharedDb`] suitable for use in a single test.

@@ -103,6 +103,11 @@ impl MergeMintContract {
     /// * `deadline` - Optional ledger sequence deadline after which the bounty cannot be claimed.
     /// * `tags` - Categorisation tags (e.g. "bug", "docs"). At most 5 tags allowed.
     /// * `max_assignees` - Maximum number of contributors who can claim this bounty (must be >= 1).
+    /// * `required_verifiers` - Optional list of addresses permitted to approve completion via
+    ///   `approve_completion`. When `None`, the single-verifier `complete_bounty` flow applies.
+    /// * `approval_threshold` - Number of unique approvals required before completion executes
+    ///   automatically. Only meaningful when `required_verifiers` is `Some`; must not exceed the
+    ///   number of verifiers.
     ///
     /// # Returns
     /// The newly generated `BountyId` that uniquely identifies this bounty.
@@ -112,6 +117,8 @@ impl MergeMintContract {
     /// * If `reward_amount` is below `MIN_REWARD_AMOUNT` (`ContractError::RewardBelowMinimum`).
     /// * If `tags.len() > 5` (`ContractError::TooManyTags`).
     /// * If `max_assignees < 1` (`ContractError::MaxAssigneesMustBePositive`).
+    /// * If `approval_threshold` exceeds `required_verifiers.len()` when set
+    ///   (`ContractError::ApprovalThresholdExceedsVerifiers`).
     ///
     /// # Authorization
     /// Requires auth from `creator`.
@@ -126,11 +133,12 @@ impl MergeMintContract {
         deadline: Option<u32>,
         tags: Vec<Symbol>,
         max_assignees: u32,
+        required_verifiers: Option<Vec<Address>>,
+        approval_threshold: u32,
     ) -> BountyId {
-        // Validated first, ahead of auth and all storage interaction: a reward
-        // below the minimum threshold is a malformed request regardless of who
-        // is asking.
-        if reward_amount < MIN_REWARD_AMOUNT {
+        // Validated first, ahead of auth and all storage interaction: a
+        // non-positive reward is a malformed request regardless of who is asking.
+        if reward_amount <= 0 {
             fail(ContractError::RewardMustBePositive);
         }
 
@@ -141,6 +149,18 @@ impl MergeMintContract {
         // Validate tags length before auth to fail fast on malformed input.
         if tags.len() > 5 {
             fail(ContractError::TooManyTags);
+        }
+
+        // Validate max_assignees before auth: at least 1 is required.
+        if max_assignees < 1 {
+            fail(ContractError::MaxAssigneesMustBePositive);
+        }
+
+        // Validate multi-sig params: threshold must not exceed verifier count when set.
+        if let Some(ref verifiers) = required_verifiers {
+            if approval_threshold > verifiers.len() {
+                fail(ContractError::ApprovalThresholdExceedsVerifiers);
+            }
         }
 
         // Reject deadlines already in the past at creation time.
@@ -210,6 +230,11 @@ impl MergeMintContract {
             Some(b) => b,
             None => fail(ContractError::BountyNotFound),
         };
+
+        // GUARD: bounty must be in "open" status to be claimed.
+        if bounty.status != Symbol::new(&env, STATUS_OPEN) {
+            fail(ContractError::BountyNotOpen);
+        }
 
         // The creator of a bounty cannot claim their own bounty.
         if contributor == bounty.creator {

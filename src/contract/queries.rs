@@ -44,6 +44,10 @@ impl MergeMintContract {
         storage::get_bounties_by_status(&env, &status)
     }
 
+    pub fn get_status_count(env: Env, status: Symbol) -> u32 {
+        storage::get_status_count(&env, &status)
+    }
+
     pub fn get_open_bounties(env: Env) -> Vec<BountyId> {
         storage::get_open_bounties(&env)
     }
