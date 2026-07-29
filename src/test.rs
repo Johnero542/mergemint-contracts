@@ -727,7 +727,7 @@ fn test_second_claim_rejected_while_active() {
 }
 
 #[test]
-#[should_panic(expected = "bounty not open")]
+#[should_panic(expected = "bounty already assigned")]
 fn test_second_contributor_cannot_claim_full_bounty() {
     let (env, creator, contributor, _verifier) = setup_test();
     let contract_id = env.register(MergeMintContract, ());
@@ -1433,6 +1433,8 @@ fn make_multi_bounty_with_token(
         &None,
         &Vec::new(env),
         &max_assignees,
+        &None,
+        &1,
     );
     (bounty_id, token_addr)
 }
@@ -1449,7 +1451,13 @@ fn test_two_assignees_equal_share_bp() {
 
     let reward_amount: i128 = 10_000;
     let (bounty_id, _) = make_multi_bounty_with_token(
-        &client, &env, &creator, &verifier, "two_eq", reward_amount, 2,
+        &client,
+        &env,
+        &creator,
+        &verifier,
+        "two_eq",
+        reward_amount,
+        2,
     );
 
     // First claimant — absorbs remainder (10_000 % 2 == 0, so no remainder here).
@@ -1482,7 +1490,13 @@ fn test_two_assignees_payout_sum_equals_reward() {
 
     let reward_amount: i128 = 10_000;
     let (bounty_id, token_addr) = make_multi_bounty_with_token(
-        &client, &env, &creator, &verifier, "two_payout", reward_amount, 2,
+        &client,
+        &env,
+        &creator,
+        &verifier,
+        "two_payout",
+        reward_amount,
+        2,
     );
 
     client.claim_bounty(&contributor1, &bounty_id);
@@ -1518,7 +1532,13 @@ fn test_three_assignees_first_absorbs_remainder_share_bp() {
 
     let reward_amount: i128 = 10_000;
     let (bounty_id, _) = make_multi_bounty_with_token(
-        &client, &env, &creator, &verifier, "three_rem", reward_amount, 3,
+        &client,
+        &env,
+        &creator,
+        &verifier,
+        "three_rem",
+        reward_amount,
+        3,
     );
 
     client.claim_bounty(&contributor1, &bounty_id);
@@ -1565,7 +1585,13 @@ fn test_three_assignees_payout_sum_with_divisible_reward() {
     // 10_000 * 3334 / 10_000 = 3334 (exact), 10_000 * 3333 / 10_000 = 3333 (exact)
     let reward_amount: i128 = 10_000;
     let (bounty_id, token_addr) = make_multi_bounty_with_token(
-        &client, &env, &creator, &verifier, "three_div", reward_amount, 3,
+        &client,
+        &env,
+        &creator,
+        &verifier,
+        "three_div",
+        reward_amount,
+        3,
     );
 
     client.claim_bounty(&contributor1, &bounty_id);
@@ -1578,7 +1604,10 @@ fn test_three_assignees_payout_sum_with_divisible_reward() {
     let payout2 = token_client.balance(&contributor2);
     let payout3 = token_client.balance(&contributor3);
 
-    assert_eq!(payout1, 3_334, "first assignee payout (with remainder share)");
+    assert_eq!(
+        payout1, 3_334,
+        "first assignee payout (with remainder share)"
+    );
     assert_eq!(payout2, 3_333, "second assignee payout");
     assert_eq!(payout3, 3_333, "third assignee payout");
     assert_eq!(
@@ -1610,7 +1639,13 @@ fn test_three_assignees_payout_integer_division_loss_documented() {
     // Use 9_999 — not perfectly divisible by 3_333/3_334 in the payout formula.
     let reward_amount: i128 = 9_999;
     let (bounty_id, token_addr) = make_multi_bounty_with_token(
-        &client, &env, &creator, &verifier, "three_loss", reward_amount, 3,
+        &client,
+        &env,
+        &creator,
+        &verifier,
+        "three_loss",
+        reward_amount,
+        3,
     );
 
     client.claim_bounty(&contributor1, &bounty_id);
@@ -1623,20 +1658,19 @@ fn test_three_assignees_payout_integer_division_loss_documented() {
     let payout2 = token_client.balance(&contributor2);
     let payout3 = token_client.balance(&contributor3);
 
-    // 9_999 * 3_334 / 10_000 = 3_332 (truncated from 3_332.6666)
-    assert_eq!(payout1, 3_332, "first assignee payout (truncated)");
-    // 9_999 * 3_333 / 10_000 = 3_332 (truncated from 3_332.3667)
+    // 9_999 * 3_334 / 10_000 = 3_333 (truncated from 3_333.6666)
+    assert_eq!(payout1, 3_333, "first assignee payout (truncated)");
+    // 9_999 * 3_333 / 10_000 = 3_332 (truncated from 3_332.6667)
     assert_eq!(payout2, 3_332, "second assignee payout (truncated)");
     assert_eq!(payout3, 3_332, "third assignee payout (truncated)");
 
     let total_paid = payout1 + payout2 + payout3;
     let integer_division_loss = reward_amount - total_paid;
 
-    // Document the known loss: 9_999 - 9_996 = 3 tokens unaccounted for.
+    // Document the known loss: 9_999 - 9_997 = 2 tokens unaccounted for.
     assert_eq!(
-        integer_division_loss,
-        3,
-        "integer-division loss is 3 tokens for reward_amount=9_999 with 3 assignees"
+        integer_division_loss, 2,
+        "integer-division loss is 2 tokens for reward_amount=9_999 with 3 assignees"
     );
     // The total paid is strictly less than reward_amount in this case.
     assert!(
@@ -1658,7 +1692,13 @@ fn test_two_assignees_uneven_reward_integer_division_loss() {
 
     let reward_amount: i128 = 9_999;
     let (bounty_id, token_addr) = make_multi_bounty_with_token(
-        &client, &env, &creator, &verifier, "two_odd", reward_amount, 2,
+        &client,
+        &env,
+        &creator,
+        &verifier,
+        "two_odd",
+        reward_amount,
+        2,
     );
 
     client.claim_bounty(&contributor1, &bounty_id);
@@ -1678,8 +1718,7 @@ fn test_two_assignees_uneven_reward_integer_division_loss() {
 
     // Document: 1 token lost.
     assert_eq!(
-        integer_division_loss,
-        1,
+        integer_division_loss, 1,
         "integer-division loss is 1 token for reward_amount=9_999 with 2 assignees"
     );
 }
