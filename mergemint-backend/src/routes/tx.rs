@@ -60,6 +60,12 @@ impl AppError {
     ///
     /// `detail` is **only** logged via `tracing::error!`; it is never
     /// included in the HTTP response body (see [`IntoResponse`] impl below).
+    ///
+    /// No handler in this stub backend currently produces a 500 (both
+    /// `resolve_dispute` and `self_claim` only ever return 400/404), so this
+    /// constructor has no live call site yet — it's exercised by the tests
+    /// below and is here for handlers that build real Horizon/RPC calls.
+    #[allow(dead_code)]
     pub fn internal(detail: impl std::fmt::Display) -> AppError {
         tracing::error!(detail = %detail, "internal server error");
         AppError {
@@ -242,8 +248,8 @@ pub async fn self_claim(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::response::IntoResponse;
     use axum::body::to_bytes;
+    use axum::response::IntoResponse;
 
     /// Helper: convert a Response body to a String.
     async fn body_string(response: axum::response::Response) -> String {

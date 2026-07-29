@@ -231,8 +231,15 @@ impl MergeMintContract {
             None => fail(ContractError::BountyNotFound),
         };
 
-        // GUARD: bounty must be in "open" status to be claimed.
-        if bounty.status != Symbol::new(&env, STATUS_OPEN) {
+        // GUARD: a bounty in a terminal/blocked state can never be claimed.
+        // Note this is intentionally broader than `status == STATUS_OPEN`: a
+        // multi-assignee bounty moves to "in_progress" after its first claim
+        // and must remain claimable by further contributors while capacity
+        // remains (enforced below by the max_assignees check).
+        if bounty.status == Symbol::new(&env, STATUS_CANCELLED)
+            || bounty.status == Symbol::new(&env, STATUS_COMPLETED)
+            || bounty.status == Symbol::new(&env, STATUS_DISPUTED)
+        {
             fail(ContractError::BountyNotOpen);
         }
 
