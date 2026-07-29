@@ -149,10 +149,14 @@ pub fn poll_once(state: &mut IndexerState, events: &[RawEvent], page_complete: b
 
     for event in events {
         // ── Issue 3: log decode failures instead of silent skip ──────────
+        //
+        // The original code used `let Ok(event_name) = … else { continue; }`
+        // which swallowed genuine XDR decode errors identically to expected
+        // no-ops.  Changing the else branch to emit warn! makes malformed
+        // topics observable in production logs without changing control flow.
         let event_name = match event.topics.first() {
             Some(TopicDecodeResult::Ok(name)) => name.clone(),
             Some(TopicDecodeResult::Err(e)) => {
-                // fix: log event topic decode failures instead of silent skip
                 warn!("failed to decode event topic: {e}");
                 continue;
             }
