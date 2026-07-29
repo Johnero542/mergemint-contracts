@@ -163,10 +163,14 @@ pub fn poll_once(state: &mut IndexerState, events: &[RawEvent], page_complete: b
         };
 
         // ── Issue 2: log unrecognised events instead of silent drop ──────
+        //
+        // Prior to this fix, events not in SINGLE_VALUE_EVENTS/TUPLE_EVENTS
+        // were silently skipped.  A future contract upgrade emitting a new
+        // event kind would be invisible in production logs.  The warn! here
+        // makes that immediately observable.
         if extract_bounty_id_hex(&[event_name.clone()], &event.value_hex).is_none() {
-            // fix: log unrecognized indexer events instead of silent drop
             warn!("unrecognized contract event: {event_name}");
-            // Still track the ledger so it can advance past this event.
+            // Still track the ledger so unrecognised events don't stall progress.
         }
 
         if event.ledger > highest_ledger {
