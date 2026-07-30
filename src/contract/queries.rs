@@ -1,38 +1,83 @@
-// Queries are included directly into mod.rs via include!(), so all imports
-// from mod.rs are already in scope — no use statements needed here.
+use crate::contract::state::{BountyId, BountyMeta, BOUNTIES};
+use cosmwasm_std::{Deps, Env, StdResult};
 
-#[contractimpl]
-impl MergeMintContract {
-    pub fn get_bounty(env: Env, bounty_id: BountyId) -> Option<Bounty> {
-        storage::get_bounty(&env, &bounty_id)
+pub fn get_bounty_meta(deps: Deps, _env: Env, id: BountyId) -> StdResult<Option<BountyMeta>> {
+    BOUNTIES.may_load(deps.storage, id)
+}
+
+pub fn get_bounty_metas(deps: Deps, _env: Env, ids: Vec<BountyId>) -> StdResult<Vec<Option<BountyMeta>>> {
+    ids.into_iter()
+        .map(|id| BOUNTIES.may_load(deps.storage, id))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cosmwasm_std::testing::{mock_dependencies, mock_env};
+    use crate::contract::state::BOUNTIES;
+
+    #[test]
+    fn test_get_bounty_metas_batch() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
+
+        let meta1 = BountyMeta {
+            title: "Bounty 1".to_string(),
+            description: "Description 1".to_string(),
+        };
+        let meta3 = BountyMeta {
+            title: "Bounty 3".to_string(),
+            description: "Description 3".to_string(),
+        };
+
+        BOUNTIES.save(deps.as_mut().storage, 1u64, &meta1).unwrap();
+        BOUNTIES.save(deps.as_mut().storage, 3u64, &meta3).unwrap();
+
+        let ids = vec![1u64, 2u64, 3u64, 4u64];
+        let result = get_bounty_metas(deps.as_ref(), env, ids).unwrap();
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], Some(meta1));
+        assert_eq!(result[1], None);
+        assert_eq!(result[2], Some(meta3));
+        assert_eq!(result[3], None);
     }
 
-    pub fn get_bounty_meta(env: Env, bounty_id: BountyId) -> Option<BountyMeta> {
-        storage::get_bounty_meta(&env, &bounty_id)
+    #[test]
+    fn test_get_bounty_metas_empty() {
+        let deps = mock_dependencies();
+        let env = mock_env();
+
+        let ids = vec![1u64, 2u64, 3u64];
+        let result = get_bounty_metas(deps.as_ref(), env, ids).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert!(result.iter().all(|r| r.is_none()));
     }
 
-    pub fn get_contributor(env: Env, address: Address) -> Option<Contributor> {
-        storage::get_contributor(&env, &address)
-    }
+    #[test]
+    fn test_get_bounty_metas_all_exist() {
+        let mut deps = mock_dependencies();
+        let env = mock_env();
 
-    pub fn get_bounty_count(env: Env) -> u64 {
-        storage::get_bounty_count(&env)
-    }
+        let meta1 = BountyMeta {
+            title: "Bounty 1".to_string(),
+            description: "Description 1".to_string(),
+        };
+        let meta2 = BountyMeta {
+            title: "Bounty 2".to_string(),
+            description: "Description 2".to_string(),
+        };
 
-    pub fn get_bounties_by_status(env: Env, status: Symbol) -> Vec<BountyId> {
-        storage::get_bounties_by_status(&env, &status)
-    }
+        BOUNTIES.save(deps.as_mut().storage, 1u64, &meta1).unwrap();
+        BOUNTIES.save(deps.as_mut().storage, 2u64, &meta2).unwrap();
 
-    pub fn get_open_bounties(env: Env) -> Vec<BountyId> {
-        storage::get_open_bounties(&env)
-    }
+        let ids = vec![1u64, 2u64];
+        let result = get_bounty_metas(deps.as_ref(), env, ids).unwrap();
 
-    /// Return all bounty IDs created by a specific creator address.
-    ///
-    /// The list is maintained in `DataKey::ContributorBounties(creator)` and
-    /// appended to on each `create_bounty` call. Returns an empty `Vec` if the
-    /// address has never created a bounty.
-    pub fn get_bounties_by_creator(env: Env, creator: Address) -> Vec<BountyId> {
-        storage::get_creator_bounties(&env, &creator)
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], Some(meta1));
+        assert_eq!(result[1], Some(meta2));
     }
 }
