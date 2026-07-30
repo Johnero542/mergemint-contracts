@@ -58,7 +58,7 @@ fn it_compiles() {
 #[test]
 fn test_db_starts_empty() {
     let db = test_db();
-    let guard = db.lock().expect("lock should not be poisoned");
+    let guard = db.read().expect("lock should not be poisoned");
     assert!(
         guard.records.is_empty(),
         "a freshly created test_db must contain no records"
@@ -71,14 +71,14 @@ fn test_db_instances_are_independent() {
     let db_b = test_db();
 
     // Write into db_a.
-    db_a.lock()
+    db_a.write()
         .unwrap()
         .records
         .insert("key".to_string(), "value_a".to_string());
 
     // db_b must be unaffected.
     assert!(
-        db_b.lock().unwrap().records.is_empty(),
+        db_b.read().unwrap().records.is_empty(),
         "db_b must not share state with db_a"
     );
 }

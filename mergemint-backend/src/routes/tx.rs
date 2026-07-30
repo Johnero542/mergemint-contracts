@@ -11,7 +11,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::db::{acquire_db, SharedDb};
+use crate::db::{read_db, SharedDb};
 
 // ---------------------------------------------------------------------------
 // Shared application state
@@ -151,7 +151,7 @@ pub async fn resolve_dispute(
     Json(req): Json<ResolveDisputeRequest>,
 ) -> Result<Json<ResolveDisputeResponse>, (StatusCode, Json<AppError>)> {
     let bounty = {
-        let db = acquire_db(&state.db);
+        let db = read_db(&state.db);
         let raw = db
             .records
             .get(&req.bounty_id)
@@ -208,7 +208,7 @@ pub async fn self_claim(
     Json(req): Json<SelfClaimRequest>,
 ) -> Result<Json<ResolveDisputeResponse>, (StatusCode, Json<AppError>)> {
     let bounty = {
-        let db = acquire_db(&state.db);
+        let db = read_db(&state.db);
         let raw = db
             .records
             .get(&req.bounty_id)
