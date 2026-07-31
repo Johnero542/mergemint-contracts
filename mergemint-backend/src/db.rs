@@ -2,10 +2,10 @@
 //
 // Database connection pool and shared state helpers.
 //
-// ## Mutex-poison recovery (#473)
+// ## Lock-poison recovery (#473)
 //
-// Rust's `Mutex::lock()` returns `Err(PoisonError)` if a thread panicked while
-// holding the lock.  Calling `.unwrap()` would re-panic every subsequent
+// Rust's lock APIs return `Err(PoisonError)` if a thread panicked while
+// holding the lock. Calling `.unwrap()` would re-panic every subsequent
 // caller, effectively taking the whole service down for what is often a
 // transient edge case.
 //
@@ -16,7 +16,7 @@
 // return an error to the client rather than crashing the process.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 /// Lightweight in-memory store used during development / integration tests.
 /// Production deployments replace this with a real database pool.
@@ -26,20 +26,30 @@ pub struct DbStore {
 }
 
 /// Shared, thread-safe handle to the database store.
-pub type SharedDb = Arc<Mutex<DbStore>>;
+///
+/// The store uses an `RwLock` so API read paths can proceed concurrently while
+/// writes still take exclusive access. This mirrors the production goal of
+/// avoiding a single mutex-guarded connection that serializes every DB access.
+pub type SharedDb = Arc<RwLock<DbStore>>;
 
 /// Create a new, empty shared database handle.
 pub fn new_shared_db() -> SharedDb {
-    Arc::new(Mutex::new(DbStore::default()))
+    Arc::new(RwLock::new(DbStore::default()))
 }
 
-/// Acquire the database lock, recovering gracefully from mutex poison.
+/// Acquire the database write lock, recovering gracefully from lock poison.
 ///
 /// If a previous thread panicked while holding this lock, `.into_inner()`
 /// extracts the guarded value so the service can keep running instead of
 /// propagating the panic to every subsequent request.
-pub fn acquire_db(db: &SharedDb) -> std::sync::MutexGuard<'_, DbStore> {
-    db.lock().unwrap_or_else(|e| e.into_inner())
+#[allow(dead_code)]
+pub fn acquire_db(db: &SharedDb) -> std::sync::RwLockWriteGuard<'_, DbStore> {
+    db.write().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Acquire the database read lock, recovering gracefully from lock poison.
+pub fn read_db(db: &SharedDb) -> std::sync::RwLockReadGuard<'_, DbStore> {
+    db.read().unwrap_or_else(|e| e.into_inner())
 }
 
 #[cfg(test)]
@@ -66,12 +76,22 @@ mod tests {
         // Simulate a panic while holding the lock.
         let db_clone = Arc::clone(&db);
         let _ = std::panic::catch_unwind(move || {
-            let _guard = db_clone.lock().unwrap();
+            let _guard = db_clone.write().unwrap();
             panic!("simulated panic");
         });
 
         // The lock is now poisoned; acquire_db must not propagate the poison.
         let guard = acquire_db(&db);
         assert!(guard.records.is_empty(), "recovered store should be intact");
+    }
+
+    #[test]
+    fn test_concurrent_read_guards_are_allowed() {
+        let db = new_shared_db();
+        let read_a = read_db(&db);
+        let read_b = read_db(&db);
+
+        assert!(read_a.records.is_empty());
+        assert!(read_b.records.is_empty());
     }
 }

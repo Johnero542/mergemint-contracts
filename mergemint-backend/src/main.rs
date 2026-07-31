@@ -57,6 +57,9 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// generated automatically by `SetRequestIdLayer`.
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
+/// Reward-token allowlist env var consumed by create-bounty flows.
+const ALLOWLISTED_REWARD_TOKENS_ENV: &str = "ALLOWLISTED_REWARD_TOKENS";
+
 #[tokio::main]
 async fn main() {
     // ---------------------------------------------------------------------------
@@ -77,6 +80,8 @@ async fn main() {
         }))
         .with(fmt::layer())
         .init();
+
+    warn_if_reward_token_allowlist_empty();
 
     let shared_db = new_shared_db();
     let state = Arc::new(AppState { db: shared_db });
@@ -135,4 +140,28 @@ async fn main() {
     );
 
     axum::serve(listener, app).await.expect("server error");
+}
+
+fn warn_if_reward_token_allowlist_empty() {
+    let allowlist = std::env::var(ALLOWLISTED_REWARD_TOKENS_ENV).unwrap_or_default();
+    if allowlist.split(',').all(|token| token.trim().is_empty()) {
+        tracing::warn!(
+            "ALLOWLISTED_REWARD_TOKENS is empty — all create_bounty requests will be rejected"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn empty_allowlist_detection_handles_unset_empty_and_commas() {
+        fn is_empty(value: &str) -> bool {
+            value.split(',').all(|token| token.trim().is_empty())
+        }
+
+        assert!(is_empty(""));
+        assert!(is_empty(" , , "));
+        assert!(!is_empty("native"));
+        assert!(!is_empty(" , native , "));
+    }
 }
