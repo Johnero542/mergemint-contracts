@@ -6,18 +6,9 @@ use soroban_sdk::{
     Address, Env, String, Symbol, Vec,
 };
 
-use crate::contract::MergeMintContract;
-use crate::contract::MergeMintContractClient;
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
-fn setup_test() -> (Env, Address, Address, Address) {
+#[test]
+fn test_claim_bounty_deadline_enforcement() {
     let env = Env::default();
-    let creator = Address::generate(&env);
-    let contributor = Address::generate(&env);
-    let verifier = Address::generate(&env);
     env.mock_all_auths();
     (env, creator, contributor, verifier)
 }
