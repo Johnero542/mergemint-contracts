@@ -1,5 +1,5 @@
-// Queries are included directly into mod.rs via include!(), so all imports
-// from mod.rs are already in scope — no use statements needed here.
+use crate::contract::state::{BountyId, BountyMeta, BOUNTIES};
+use cosmwasm_std::{Deps, Env, StdResult};
 
 /// Maximum items returnable in a single paginated call.
 ///
@@ -45,9 +45,11 @@ impl MergeMintContract {
         storage::get_bounty(&env, &bounty_id)
     }
 
-    pub fn get_bounty_meta(env: Env, bounty_id: BountyId) -> Option<BountyMeta> {
-        storage::get_bounty_meta(&env, &bounty_id)
-    }
+pub fn get_bounty_metas(deps: Deps, _env: Env, ids: Vec<BountyId>) -> StdResult<Vec<Option<BountyMeta>>> {
+    ids.into_iter()
+        .map(|id| BOUNTIES.may_load(deps.storage, id))
+        .collect()
+}
 
     pub fn get_bounty_metas(env: Env, ids: Vec<BountyId>) -> Vec<Option<BountyMeta>> {
         let mut result: Vec<Option<BountyMeta>> = Vec::new(&env);
