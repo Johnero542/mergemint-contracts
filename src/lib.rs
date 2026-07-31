@@ -5,6 +5,7 @@
 mod contract;
 mod errors;
 mod events;
+mod scval;
 mod storage;
 mod types;
 

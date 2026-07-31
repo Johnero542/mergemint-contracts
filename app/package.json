@@ -1,0 +1,16 @@
+{
+  "name": "@mergemint/app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frontend form components for the MergeMint bounty and contributor flows",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

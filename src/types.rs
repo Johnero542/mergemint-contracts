@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, String, Symbol, Vec};
 
 /// A type-safe identifier for a bounty.
 ///
@@ -30,8 +30,20 @@ pub enum DataKey {
     BountyMeta(BountyId),
     Contributor(Address),
     ContributorBounties(Address),
+    /// Legacy single-blob status index — replaced by StatusIndexPage.
+    /// Kept in the enum so existing serialised keys can still be read during a
+    /// migration pass. New code must not write this variant.
     StatusIndex(Symbol),
+    StatusCount(Symbol),
+    /// Paged status index shard. `page` is 0-indexed; each shard holds at most
+    /// `storage::PAGE_SIZE` entries. See storage.rs for the layout contract.
+    StatusIndexPage(Symbol, u32),
+    /// Legacy single-blob open-bounties list — replaced by OpenBountiesPage.
     OpenBounties,
+    /// Total number of open bounties (sum across all OpenBountiesPage shards).
+    OpenBountiesCount,
+    /// Paged open-bounties shard. `page` is 0-indexed.
+    OpenBountiesPage(u32),
     Approvals(BountyId),
 }
 
@@ -51,7 +63,6 @@ pub struct Bounty {
     pub reward_token: Address,
     pub assignees: Vec<(Address, u32)>,
     pub max_assignees: u32,
-    #[allow(dead_code)]
     pub status: Symbol,
     pub min_reputation: u32,
     pub deadline: Option<u32>,
@@ -66,13 +77,15 @@ pub struct Bounty {
     /// At most 5 tags are allowed; `create_bounty` panics with `TooManyTags`
     /// if the caller supplies more than 5.
     pub tags: Vec<Symbol>,
+    /// Optional staged payouts. When empty, the bounty is all-or-nothing.
+    pub milestones: Vec<Milestone>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct BountyMeta {
     pub title: Symbol,
-    pub description: Symbol,
+    pub description: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,6 +98,22 @@ pub struct Contributor {
     pub contribution_count: u32,
     pub active_claims: u32,
     pub metadata: Option<Symbol>,
+}
+
+/// Pagination metadata returned alongside a page of results.
+///
+/// Used by `get_open_bounties_paged` to let callers know the total number of
+/// open bounties so they can compute the number of pages without a separate
+/// `get_bounty_count` call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct PageInfo {
+    /// Zero-based offset of the first item in this page.
+    pub offset: u32,
+    /// Number of items requested (may be fewer if near the end of the list).
+    pub limit: u32,
+    /// Total number of open bounties at query time.
+    pub total: u32,
 }
 
 impl Contributor {

@@ -205,7 +205,7 @@ Maintaining this invariant is the primary correctness goal for all escrow-relate
 
 - [x] Add status guard to `complete_bounty`: panic if `status != in_progress`. *(done — see threat #5)*
 - [ ] Enforce `reward_amount > 0` in `create_bounty`.
-- [ ] Add creator-cannot-claim guard in `claim_bounty` (fixes threat #3).
+- [x] Add creator-cannot-claim guard in `claim_bounty` (fixes threat #3). *(done — see threat #3)*
 - [x] Add verifier-cannot-be-assignee guard in `complete_bounty` (fixes threat #4). *(done — see threat #4)*
 - [ ] Fuzz `reward_amount` edge cases (0, `i128::MAX`, negative).
 - [ ] Add integration test: `contract_balance == sum(open + in_progress rewards)` after every state transition.
