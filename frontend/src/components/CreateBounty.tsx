@@ -5,7 +5,14 @@ import { NetworkName } from "../lib/types";
 
 interface CreateBountyProps {
   network: NetworkName;
-  onSubmit: (form: { title: string; description: string; rewardAmount: string }) => Promise<{ hash: string }>;
+  onSubmit: (form: {
+    title: string;
+    description: string;
+    rewardAmount: string;
+    maxAssignees: number;
+    verifiers: string[];
+    threshold: number;
+  }) => Promise<{ hash: string }>;
 }
 
 export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
@@ -19,7 +26,16 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
   const { pending, error, result, run } = useTxFlow(network);
 
   async function perform() {
-    await run(() => onSubmit({ title, description, rewardAmount }));
+    await run(() =>
+      onSubmit({
+        title,
+        description,
+        rewardAmount,
+        maxAssignees,
+        verifiers: verifiers.filter((v) => v.trim() !== ""),
+        threshold,
+      })
+    );
   }
 
   return (
@@ -43,7 +59,6 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
         <input value={rewardAmount} onChange={(e) => setRewardAmount(e.target.value)} />
       </label>
 
-      {/* Stub UI only — wire up once contract issues #9/#10 (multi-assignee) ship. */}
       <label>
         Max assignees
         <input
@@ -53,13 +68,10 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
           onChange={(e) => setMaxAssignees(Number(e.target.value))}
         />
         <span className="create-bounty__hint">
-          When more than one assignee is allowed, the reward is split across claimants by share
-          (see the assignee list on the bounty detail page). Not yet enforced on-chain — pending
-          contract issues #9/#10.
+          When more than one assignee is allowed, the reward is split across claimants by share.
         </span>
       </label>
 
-      {/* Stub UI only — wire up once contract issue #11 (multi-sig verifiers) ships. */}
       <details
         className="create-bounty__advanced"
         open={multisigOpen}
@@ -101,11 +113,6 @@ export function CreateBounty({ network, onSubmit }: CreateBountyProps) {
             ))}
           </select>
         </label>
-
-        <p className="create-bounty__advanced-note">
-          Multi-sig verification is not yet enforced on-chain — this form does not submit these
-          fields until contract issue #11 ships.
-        </p>
       </details>
 
       <button type="submit" disabled={pending}>

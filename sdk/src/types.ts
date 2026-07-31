@@ -13,6 +13,10 @@ export interface Bounty {
   status: string;
   minReputation: number;
   deadline: number | null;
+  tags: string[];
+  requiredVerifiers?: string[];
+  approvalThreshold: number;
+  milestones: Array<{ description: string; reward: bigint; completed: boolean }>;
 }
 
 export interface BountyMeta {
@@ -35,7 +39,11 @@ export interface CreateBountyParams {
   description: string;
   rewardAmount: bigint;
   rewardToken: string;
-  maxAssignees?: number;
-  minReputation?: number;
-  deadline?: number | null;
+  minReputation: number;
+  deadline: number | null;
+  tags: string[];
+  maxAssignees: number;
+  requiredVerifiers?: string[];
+  approvalThreshold?: number;
+  milestones?: Array<{ description: string; reward: bigint; completed: boolean }>;
 }

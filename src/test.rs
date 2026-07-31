@@ -31,18 +31,21 @@ fn make_bounty(
     tag: &str,
     deadline: Option<u32>,
 ) -> crate::types::BountyId {
+    let sac = env.register_stellar_asset_contract_v2(creator.clone());
+    let token_addr = sac.address();
     client.create_bounty(
         creator,
         &Symbol::new(env, tag),
         &String::from_str(env, "desc"),
         &1000,
-        &Address::generate(env),
+        &token_addr,
         &0,
         &deadline,
         &Vec::new(env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     )
 }
 
@@ -81,6 +84,7 @@ fn make_bounty_with_token(
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
     (bounty_id, token_addr)
 }
@@ -105,13 +109,14 @@ fn test_tags_stored_and_retrieved() {
         &Symbol::new(&env, "tagged"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &tags,
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -132,13 +137,14 @@ fn test_empty_tags_valid() {
         &Symbol::new(&env, "no_tags"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -164,13 +170,14 @@ fn test_five_tags_allowed() {
         &Symbol::new(&env, "max_tags"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &tags,
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -195,13 +202,14 @@ fn test_too_many_tags_panics() {
         &Symbol::new(&env, "overtags"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &tags,
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 }
 
@@ -416,13 +424,14 @@ fn test_create_bounty_rejects_past_deadline() {
         &Symbol::new(&env, "past_dl"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &Some(50),
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 }
 
@@ -439,13 +448,14 @@ fn test_create_bounty_accepts_future_deadline() {
         &Symbol::new(&env, "future_dl"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &Some(100),
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 }
 
@@ -460,7 +470,7 @@ fn test_create_bounty() {
     let client = MergeMintContractClient::new(&env, &contract_id);
 
     let reward_amount: i128 = 1000;
-    let reward_token = Address::generate(&env);
+    let reward_token = create_token_and_mint(&env, &creator, &contract_id, 0);
     let bounty_id = client.create_bounty(
         &creator,
         &Symbol::new(&env, "test_b"),
@@ -473,6 +483,7 @@ fn test_create_bounty() {
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -502,13 +513,14 @@ fn test_create_bounty_rejects_zero_reward() {
         &Symbol::new(&env, "zero_rew"),
         &String::from_str(&env, "desc"),
         &0,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 }
 
@@ -525,13 +537,14 @@ fn test_create_bounty_rejects_negative_reward() {
         &Symbol::new(&env, "neg_rew"),
         &String::from_str(&env, "desc"),
         &(-50),
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 }
 
@@ -548,13 +561,14 @@ fn test_create_bounty_rejects_below_minimum_reward() {
         &Symbol::new(&env, "small_rew"),
         &String::from_str(&env, "desc"),
         &50,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 }
 
@@ -569,13 +583,14 @@ fn test_claim_bounty() {
         &Symbol::new(&env, "bounty_1"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
     client.claim_bounty(&contributor, &bounty_id);
 
@@ -597,13 +612,14 @@ fn test_creator_cannot_claim_own_bounty() {
         &Symbol::new(&env, "bounty_1"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
     client.claim_bounty(&creator, &bounty_id);
 }
@@ -615,7 +631,7 @@ fn test_bounty_count() {
     let client = MergeMintContractClient::new(&env, &contract_id);
 
     assert_eq!(client.get_bounty_count(), 0);
-    let reward_token = Address::generate(&env);
+    let reward_token = create_token_and_mint(&env, &creator, &contract_id, 0);
     client.create_bounty(
         &creator,
         &Symbol::new(&env, "bounty_a"),
@@ -628,6 +644,7 @@ fn test_bounty_count() {
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
     assert_eq!(client.get_bounty_count(), 1);
     client.create_bounty(
@@ -642,6 +659,7 @@ fn test_bounty_count() {
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
     assert_eq!(client.get_bounty_count(), 2);
 }
@@ -798,13 +816,14 @@ fn test_claim_bounty_rejects_low_reputation() {
         &Symbol::new(&env, "rep_b"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &10,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     let bounty_id = client.get_bounties_by_creator(&creator, &None, &50).0.get(0).unwrap();
@@ -1072,13 +1091,14 @@ fn test_double_complete_panics() {
         &Symbol::new(&env, "dbl_complete"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     // Bounty is "open", not "in_progress" — must panic.
@@ -1196,13 +1216,14 @@ fn test_assignee_cannot_self_verify() {
         &Symbol::new(&env, "self_verify"),
         &String::from_str(&env, "desc"),
         &1000,
-        &Address::generate(&env),
+        &create_token_and_mint(&env, &creator, &contract_id, 0),
         &0,
         &None,
         &Vec::new(&env),
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     client.claim_bounty(&contributor, &bounty_id);
@@ -1365,6 +1386,7 @@ fn test_resolve_dispute_complete_pays_from_arbitrator() {
         &1,
         &None,
         &1,
+        &Vec::new(env),
     );
 
     client.claim_bounty(&contributor, &bounty_id);
@@ -1433,6 +1455,7 @@ fn make_multi_bounty_with_token(
         &max_assignees,
         &None,
         &1,
+        &Vec::new(env),
     );
     (bounty_id, token_addr)
 }

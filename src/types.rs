@@ -49,7 +49,6 @@ pub enum DataKey {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
-// TODO(#427): unused until milestone-based partial bounty completion lands
 pub struct Milestone {
     pub description: Symbol,
     pub reward: i128,
@@ -78,6 +77,8 @@ pub struct Bounty {
     /// At most 5 tags are allowed; `create_bounty` panics with `TooManyTags`
     /// if the caller supplies more than 5.
     pub tags: Vec<Symbol>,
+    /// Optional staged payouts. When empty, the bounty is all-or-nothing.
+    pub milestones: Vec<Milestone>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
