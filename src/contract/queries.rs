@@ -191,4 +191,5 @@ pub fn get_bounty_metas(deps: Deps, _env: Env, ids: Vec<BountyId>) -> StdResult<
         let all = storage::get_creator_bounties(&env, &creator);
         paginate(&env, all, cursor, limit)
     }
+    results
 }
