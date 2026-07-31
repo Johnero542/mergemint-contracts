@@ -220,10 +220,7 @@ impl MergeMintContract {
         storage::set_bounty_count(&env, &(count + 1));
         storage::add_bounty_to_status(&env, &id, &bounty.status);
         storage::append_creator_bounty(&env, &creator, &id);
-
-        let mut open = storage::get_open_bounties(&env);
-        open.push_back(id.clone());
-        storage::set_open_bounties(&env, &open);
+        storage::add_open_bounty(&env, &id);
 
         events::emit_bounty_created(&env, &id, &creator, &reward_amount);
         id
@@ -323,14 +320,7 @@ impl MergeMintContract {
         storage::store_contributor(&env, &contributor, &contrib);
 
         // Remove from open bounties list.
-        let open = storage::get_open_bounties(&env);
-        let mut new_open = Vec::new(&env);
-        for existing_id in open.iter() {
-            if existing_id != bounty_id {
-                new_open.push_back(existing_id);
-            }
-        }
-        storage::set_open_bounties(&env, &new_open);
+        storage::remove_open_bounty(&env, &bounty_id);
 
         events::emit_bounty_claimed(&env, &bounty_id, &contributor);
     }
