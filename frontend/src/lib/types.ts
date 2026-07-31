@@ -3,6 +3,12 @@ export interface Assignee {
   shareBp: number;
 }
 
+export interface Milestone {
+  description: string;
+  reward: bigint;
+  completed: boolean;
+}
+
 export interface Bounty {
   id: string;
   creator: string;
@@ -13,6 +19,10 @@ export interface Bounty {
   status: string;
   minReputation: number;
   deadline: number | null;
+  tags: string[];
+  requiredVerifiers?: string[];
+  approvalThreshold: number;
+  milestones: Milestone[];
 }
 
 export type NetworkName = "testnet" | "mainnet";

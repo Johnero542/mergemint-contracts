@@ -44,6 +44,20 @@ export function BountyDetail({ bounty, network, onClaim }: BountyDetailProps) {
         ))}
       </ul>
 
+      {bounty.milestones.length > 0 && (
+        <div className="milestone-list">
+          <h3>Milestones</h3>
+          <ul>
+            {bounty.milestones.map((ms, idx) => (
+              <li key={idx}>
+                {ms.description}: {ms.reward.toString()} {bounty.rewardToken}
+                {ms.completed ? " (completed)" : " (pending)"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <button onClick={perform} disabled={pending}>
         {pending ? "Submitting…" : "Claim"}
       </button>

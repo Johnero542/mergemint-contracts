@@ -89,6 +89,27 @@ function optionU32ToScVal(value: number | null): xdr.ScVal {
   ]);
 }
 
+function milestoneToScVal(ms: { description: string; reward: bigint; completed: boolean }): xdr.ScVal {
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: nativeToScVal("description", { type: "symbol" }),
+      val: symbolToScVal(ms.description),
+    }),
+    new xdr.ScMapEntry({
+      key: nativeToScVal("reward", { type: "symbol" }),
+      val: i128ToScVal(ms.reward),
+    }),
+    new xdr.ScMapEntry({
+      key: nativeToScVal("completed", { type: "symbol" }),
+      val: nativeToScVal(ms.completed, { type: "bool" }),
+    }),
+  ]);
+}
+
+function milestonesToScVal(milestones: Array<{ description: string; reward: bigint; completed: boolean }>): xdr.ScVal {
+  return xdr.ScVal.scvVec(milestones.map(milestoneToScVal));
+}
+
 function bytesNToHex(scVal: xdr.ScVal): string {
   const bytes = scVal.bytes();
   return Buffer.from(bytes).toString("hex");
@@ -104,6 +125,7 @@ function parseBounty(raw: unknown): Bounty {
   const assigneesRaw = (map.assignees as Array<[unknown, unknown]>) ?? [];
   const verifiersRaw = map.required_verifiers as Array<unknown> | null;
   const tagsRaw = (map.tags as Array<unknown>) ?? [];
+  const milestonesRaw = (map.milestones as Array<Record<string, unknown>>) ?? [];
   return {
     creator: map.creator as string,
     rewardAmount: BigInt(map.reward_amount as string),
@@ -119,6 +141,11 @@ function parseBounty(raw: unknown): Bounty {
     requiredVerifiers: verifiersRaw?.map((v) => v as string),
     approvalThreshold: (map.approval_threshold as number) ?? 1,
     tags: tagsRaw.map((t) => t as string),
+    milestones: milestonesRaw.map((ms) => ({
+      description: ms.description as string,
+      reward: BigInt(ms.reward as string | number),
+      completed: ms.completed as boolean,
+    })),
   };
 }
 
@@ -207,8 +234,10 @@ export class MergeMintSDK {
       u32ToScVal(params.minReputation),
       optionU32ToScVal(params.deadline),
       symbolVecToScVal(params.tags),
+      u32ToScVal(params.maxAssignees),
       optionVecAddressToScVal(params.requiredVerifiers),
       u32ToScVal(params.approvalThreshold ?? 1),
+      milestonesToScVal(params.milestones ?? []),
     ];
     return this.buildTransaction("create_bounty", args, sourceAccount);
   }

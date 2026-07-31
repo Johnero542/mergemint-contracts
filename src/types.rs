@@ -30,15 +30,25 @@ pub enum DataKey {
     BountyMeta(BountyId),
     Contributor(Address),
     ContributorBounties(Address),
+    /// Legacy single-blob status index — replaced by StatusIndexPage.
+    /// Kept in the enum so existing serialised keys can still be read during a
+    /// migration pass. New code must not write this variant.
     StatusIndex(Symbol),
     StatusCount(Symbol),
+    /// Paged status index shard. `page` is 0-indexed; each shard holds at most
+    /// `storage::PAGE_SIZE` entries. See storage.rs for the layout contract.
+    StatusIndexPage(Symbol, u32),
+    /// Legacy single-blob open-bounties list — replaced by OpenBountiesPage.
     OpenBounties,
+    /// Total number of open bounties (sum across all OpenBountiesPage shards).
+    OpenBountiesCount,
+    /// Paged open-bounties shard. `page` is 0-indexed.
+    OpenBountiesPage(u32),
     Approvals(BountyId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
-// TODO(#427): unused until milestone-based partial bounty completion lands
 pub struct Milestone {
     pub description: Symbol,
     pub reward: i128,
@@ -67,6 +77,8 @@ pub struct Bounty {
     /// At most 5 tags are allowed; `create_bounty` panics with `TooManyTags`
     /// if the caller supplies more than 5.
     pub tags: Vec<Symbol>,
+    /// Optional staged payouts. When empty, the bounty is all-or-nothing.
+    pub milestones: Vec<Milestone>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

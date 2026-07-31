@@ -27,6 +27,11 @@ pub enum ContractError {
     BountyNotDisputed,
     NotArbitrator,
     ApprovalThresholdExceedsVerifiers,
+    InvalidRewardToken,
+    MilestoneAlreadyCompleted,
+    NotAllMilestonesCompleted,
+    InvalidMilestoneIndex,
+    MilestoneRewardsMismatch,
 }
 
 /// Convert a `ContractError` to its canonical panic message and panic.
@@ -64,6 +69,15 @@ pub const fn message(e: ContractError) -> &'static str {
         ContractError::NotArbitrator => "caller is not authorized to resolve this dispute",
         ContractError::ApprovalThresholdExceedsVerifiers => {
             "approval_threshold cannot exceed the number of required_verifiers"
+        }
+        ContractError::InvalidRewardToken => "invalid reward_token address",
+        ContractError::MilestoneAlreadyCompleted => "milestone is already completed",
+        ContractError::NotAllMilestonesCompleted => {
+            "not all milestones are completed"
+        }
+        ContractError::InvalidMilestoneIndex => "invalid milestone index",
+        ContractError::MilestoneRewardsMismatch => {
+            "milestone rewards do not sum to reward_amount"
         }
     }
 }

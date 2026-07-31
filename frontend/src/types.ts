@@ -9,6 +9,13 @@ export interface Bounty {
   creator: string;
   assignee?: string;
   createdAt: string;
+  maxAssignees: number;
+  tags: string[];
+  milestones: Array<{
+    description: string;
+    reward: string;
+    completed: boolean;
+  }>;
 }
 
 export interface BountyPage {
