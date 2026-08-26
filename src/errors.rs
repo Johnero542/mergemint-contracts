@@ -72,12 +72,8 @@ pub const fn message(e: ContractError) -> &'static str {
         }
         ContractError::InvalidRewardToken => "invalid reward_token address",
         ContractError::MilestoneAlreadyCompleted => "milestone is already completed",
-        ContractError::NotAllMilestonesCompleted => {
-            "not all milestones are completed"
-        }
+        ContractError::NotAllMilestonesCompleted => "not all milestones are completed",
         ContractError::InvalidMilestoneIndex => "invalid milestone index",
-        ContractError::MilestoneRewardsMismatch => {
-            "milestone rewards do not sum to reward_amount"
-        }
+        ContractError::MilestoneRewardsMismatch => "milestone rewards do not sum to reward_amount",
     }
 }

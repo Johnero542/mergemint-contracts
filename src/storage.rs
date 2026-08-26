@@ -18,7 +18,7 @@ pub const PAGE_SIZE: u32 = 50;
 
 // ── TTL helper ────────────────────────────────────────────────────────────────
 
-fn extend<K: soroban_sdk::TryIntoVal<Env, soroban_sdk::Val> + Clone>(env: &Env, key: &K) {
+fn extend<K: soroban_sdk::IntoVal<Env, soroban_sdk::Val>>(env: &Env, key: &K) {
     env.storage()
         .persistent()
         .extend_ttl(key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_LEDGERS);
@@ -132,7 +132,7 @@ fn status_page_count(env: &Env, status: &Symbol) -> u32 {
     if total == 0 {
         0
     } else {
-        (total + PAGE_SIZE - 1) / PAGE_SIZE
+        total.div_ceil(PAGE_SIZE)
     }
 }
 
@@ -200,7 +200,7 @@ pub fn get_bounties_by_status(env: &Env, status: &Symbol) -> Vec<BountyId> {
     if total == 0 {
         return result;
     }
-    let pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+    let pages = total.div_ceil(PAGE_SIZE);
     let mut i = 0u32;
     while i < pages {
         let page = get_status_page(env, status, i);
@@ -225,7 +225,7 @@ pub fn add_bounty_to_status(env: &Env, bounty_id: &BountyId, status: &Symbol) {
         }
         // Also check all pages if total > PAGE_SIZE (full dedup guarantee).
         if total > PAGE_SIZE {
-            let page_count = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+            let _page_count = total.div_ceil(PAGE_SIZE);
             let mut p = 0u32;
             while p < last_page_idx {
                 let pg = get_status_page(env, status, p);
@@ -240,9 +240,13 @@ pub fn add_bounty_to_status(env: &Env, bounty_id: &BountyId, status: &Symbol) {
     }
 
     // Append to the last page (or create page 0).
-    let last_page_idx = if total == 0 { 0 } else { (total + PAGE_SIZE - 1) / PAGE_SIZE };
+    let last_page_idx = if total == 0 {
+        0
+    } else {
+        (total - 1) / PAGE_SIZE
+    };
     // If total is exactly divisible by PAGE_SIZE and > 0, we start a new page.
-    let target_page_idx = if total > 0 && total % PAGE_SIZE == 0 {
+    let target_page_idx = if total > 0 && total.is_multiple_of(PAGE_SIZE) {
         total / PAGE_SIZE
     } else {
         last_page_idx
@@ -258,7 +262,7 @@ pub fn remove_bounty_from_status(env: &Env, bounty_id: &BountyId, status: &Symbo
     if total == 0 {
         return;
     }
-    let page_count = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+    let page_count = total.div_ceil(PAGE_SIZE);
 
     // Find the target item across all pages.
     let mut found_page: Option<u32> = None;
@@ -266,14 +270,12 @@ pub fn remove_bounty_from_status(env: &Env, bounty_id: &BountyId, status: &Symbo
     let mut p = 0u32;
     'outer: while p < page_count {
         let page = get_status_page(env, status, p);
-        let mut pos = 0u32;
-        for id in page.iter() {
+        for (pos, id) in page.iter().enumerate() {
             if id == *bounty_id {
                 found_page = Some(p);
-                found_pos = Some(pos);
+                found_pos = Some(pos as u32);
                 break 'outer;
             }
-            pos += 1;
         }
         p += 1;
     }
@@ -291,7 +293,7 @@ pub fn remove_bounty_from_status(env: &Env, bounty_id: &BountyId, status: &Symbo
 
     if fp == last_page_idx && fpos == last_page.len() - 1 {
         // Removing the very last item — just pop it.
-        let mut new_last = last_page.clone();
+        let new_last = last_page.clone();
         // Rebuild without the last element
         let mut trimmed: Vec<BountyId> = Vec::new(env);
         let mut i = 0u32;
@@ -302,7 +304,7 @@ pub fn remove_bounty_from_status(env: &Env, bounty_id: &BountyId, status: &Symbo
         set_status_page(env, status, last_page_idx, &trimmed);
     } else {
         // Put last_item into the found slot, then shrink the last page.
-        let mut target_page = get_status_page(env, status, fp);
+        let target_page = get_status_page(env, status, fp);
         let mut new_target: Vec<BountyId> = Vec::new(env);
         let mut i = 0u32;
         while i < target_page.len() {
@@ -395,7 +397,7 @@ pub fn get_open_bounties(env: &Env) -> Vec<BountyId> {
     if total == 0 {
         return result;
     }
-    let page_count = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+    let page_count = total.div_ceil(PAGE_SIZE);
     let mut i = 0u32;
     while i < page_count {
         let page = get_open_bounties_page(env, i);
@@ -411,10 +413,10 @@ pub fn add_open_bounty(env: &Env, bounty_id: &BountyId) {
     let total = get_open_bounties_count(env);
     let target_page_idx = if total == 0 {
         0
-    } else if total % PAGE_SIZE == 0 {
+    } else if total.is_multiple_of(PAGE_SIZE) {
         total / PAGE_SIZE
     } else {
-        (total + PAGE_SIZE - 1) / PAGE_SIZE - 1
+        total.div_ceil(PAGE_SIZE) - 1
     };
     let mut page = get_open_bounties_page(env, target_page_idx);
     page.push_back(bounty_id.clone());
@@ -427,21 +429,19 @@ pub fn remove_open_bounty(env: &Env, bounty_id: &BountyId) {
     if total == 0 {
         return;
     }
-    let page_count = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+    let page_count = total.div_ceil(PAGE_SIZE);
 
     let mut found_page: Option<u32> = None;
     let mut found_pos: Option<u32> = None;
     let mut p = 0u32;
     'outer: while p < page_count {
         let page = get_open_bounties_page(env, p);
-        let mut pos = 0u32;
-        for id in page.iter() {
+        for (pos, id) in page.iter().enumerate() {
             if id == *bounty_id {
                 found_page = Some(p);
-                found_pos = Some(pos);
+                found_pos = Some(pos as u32);
                 break 'outer;
             }
-            pos += 1;
         }
         p += 1;
     }
@@ -464,7 +464,7 @@ pub fn remove_open_bounty(env: &Env, bounty_id: &BountyId) {
         }
         set_open_bounties_page(env, last_page_idx, &trimmed);
     } else {
-        let mut target_page = get_open_bounties_page(env, fp);
+        let target_page = get_open_bounties_page(env, fp);
         let mut new_target: Vec<BountyId> = Vec::new(env);
         let mut i = 0u32;
         while i < target_page.len() {
@@ -495,7 +495,7 @@ pub fn set_open_bounties(env: &Env, bounties: &Vec<BountyId>) {
     // Clear existing pages.
     let old_total = get_open_bounties_count(env);
     if old_total > 0 {
-        let old_pages = (old_total + PAGE_SIZE - 1) / PAGE_SIZE;
+        let old_pages = old_total.div_ceil(PAGE_SIZE);
         let mut p = 0u32;
         while p < old_pages {
             let key = DataKey::OpenBountiesPage(p);

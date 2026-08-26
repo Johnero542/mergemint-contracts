@@ -58,7 +58,7 @@ fn decrement_active_claims(contrib: &mut Contributor) {
 
 /// Complete a bounty by marking it as completed and distributing payout.
 /// Used as a helper by both complete_bounty and approve_completion.
-fn complete_bounty_inner(env: Env, verifier: Address, bounty_id: BountyId) {
+fn complete_bounty_inner(env: Env, bounty_id: BountyId) {
     let mut bounty = match storage::get_bounty(&env, &bounty_id) {
         Some(b) => b,
         None => fail(ContractError::BountyNotFound),
@@ -93,7 +93,12 @@ fn complete_bounty_inner(env: Env, verifier: Address, bounty_id: BountyId) {
 
     let token = TokenClient::new(&env, &bounty.reward_token);
     distribute_payout(
-        &env, &bounty_id, &bounty.assignees, &verifier, &token, bounty.reward_amount,
+        &env,
+        &bounty_id,
+        &bounty.assignees,
+        &env.current_contract_address(),
+        &token,
+        bounty.reward_amount,
     );
 
     events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
@@ -366,7 +371,7 @@ impl MergeMintContract {
             fail(ContractError::BountyHasNoAssignee);
         }
 
-        let idx = milestone_index as usize;
+        let idx = milestone_index;
         if idx >= bounty.milestones.len() {
             fail(ContractError::InvalidMilestoneIndex);
         }
@@ -383,15 +388,26 @@ impl MergeMintContract {
         }
 
         milestone.completed = true;
+        let milestone_reward = milestone.reward;
         bounty.milestones.set(idx, milestone);
 
         let token = TokenClient::new(&env, &bounty.reward_token);
         distribute_payout(
-            &env, &bounty_id, &bounty.assignees, &verifier, &token, milestone.reward,
+            &env,
+            &bounty_id,
+            &bounty.assignees,
+            &env.current_contract_address(),
+            &token,
+            milestone_reward,
         );
 
         let completed_milestone = bounty.milestones.get(idx).unwrap();
-        events::emit_milestone_completed(&env, &bounty_id, milestone_index, &completed_milestone.reward);
+        events::emit_milestone_completed(
+            &env,
+            &bounty_id,
+            milestone_index,
+            &completed_milestone.reward,
+        );
 
         storage::store_bounty(&env, &bounty_id, &bounty);
     }
@@ -484,7 +500,12 @@ impl MergeMintContract {
         // Now safe to execute token transfers — bounty is already marked completed.
         let token = TokenClient::new(&env, &bounty.reward_token);
         distribute_payout(
-            &env, &bounty_id, &bounty.assignees, &verifier, &token, bounty.reward_amount,
+            &env,
+            &bounty_id,
+            &bounty.assignees,
+            &env.current_contract_address(),
+            &token,
+            bounty.reward_amount,
         );
 
         events::emit_bounty_completed(&env, &bounty_id, &primary_assignee);
@@ -511,7 +532,7 @@ impl MergeMintContract {
 
         // If no required_verifiers list is set, fall back to immediate single-verifier completion.
         if bounty.required_verifiers.is_none() {
-            complete_bounty_inner(env, verifier, bounty_id);
+            complete_bounty_inner(env, bounty_id);
             return;
         }
 
@@ -535,7 +556,11 @@ impl MergeMintContract {
         let approval_count = approvals.len();
         events::emit_approval_recorded(&env, &bounty_id, &verifier, approval_count);
 
-        let threshold = if bounty.approval_threshold == 0 { 1 } else { bounty.approval_threshold };
+        let threshold = if bounty.approval_threshold == 0 {
+            1
+        } else {
+            bounty.approval_threshold
+        };
 
         if approval_count >= threshold {
             if !bounty.milestones.is_empty() {
@@ -553,7 +578,12 @@ impl MergeMintContract {
 
             let token = TokenClient::new(&env, &bounty.reward_token);
             distribute_payout(
-                &env, &bounty_id, &bounty.assignees, &verifier, &token, bounty.reward_amount,
+                &env,
+                &bounty_id,
+                &bounty.assignees,
+                &env.current_contract_address(),
+                &token,
+                bounty.reward_amount,
             );
 
             let (primary_assignee, _) = bounty.assignees.get(0).unwrap();
@@ -609,12 +639,7 @@ impl MergeMintContract {
     /// # Authorization
     /// `arbitrator.require_auth()` is the **first** operation in this function.
     /// No storage reads or business logic execute before authentication is checked.
-    pub fn resolve_dispute(
-        env: Env,
-        arbitrator: Address,
-        bounty_id: BountyId,
-        resolution: Symbol,
-    ) {
+    pub fn resolve_dispute(env: Env, arbitrator: Address, bounty_id: BountyId, resolution: Symbol) {
         arbitrator.require_auth();
 
         let mut bounty = match storage::get_bounty(&env, &bounty_id) {
@@ -651,8 +676,7 @@ impl MergeMintContract {
                 let token = TokenClient::new(&env, &bounty.reward_token);
 
                 for (assignee, share_bp) in bounty.assignees.iter() {
-                    let payout =
-                        (bounty.reward_amount as i128) * (share_bp as i128) / 10_000_i128;
+                    let payout = bounty.reward_amount * (share_bp as i128) / 10_000_i128;
                     token.transfer(&arbitrator, &assignee, &payout);
 
                     let mut contrib = storage::get_contributor(&env, &assignee)
@@ -675,7 +699,11 @@ impl MergeMintContract {
         } else if resolution == resolve_cancel {
             // Refund escrowed reward to creator before mutating status.
             let token = TokenClient::new(&env, &bounty.reward_token);
-            token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+            token.transfer(
+                &env.current_contract_address(),
+                &bounty.creator,
+                &bounty.reward_amount,
+            );
 
             let previous_status = bounty.status.clone();
             bounty.status = Symbol::new(&env, STATUS_CANCELLED);
@@ -744,7 +772,11 @@ impl MergeMintContract {
 
         // Refund escrowed reward to creator before mutating status.
         let token = TokenClient::new(&env, &bounty.reward_token);
-        token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+        token.transfer(
+            &env.current_contract_address(),
+            &bounty.creator,
+            &bounty.reward_amount,
+        );
 
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
@@ -796,7 +828,11 @@ impl MergeMintContract {
 
         // Refund escrowed reward to creator before mutating status.
         let token = TokenClient::new(&env, &bounty.reward_token);
-        token.transfer(&env.current_contract_address(), &bounty.creator, &bounty.reward_amount);
+        token.transfer(
+            &env.current_contract_address(),
+            &bounty.creator,
+            &bounty.reward_amount,
+        );
 
         let previous_status = bounty.status.clone();
         bounty.status = Symbol::new(&env, STATUS_CANCELLED);
