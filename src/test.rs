@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MIT
 
+use crate::contract::MergeMintContract;
+use crate::MergeMintContractClient;
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
     token::StellarAssetClient,
     Address, Env, String, Symbol, Vec,
 };
 
-#[test]
-fn test_claim_bounty_deadline_enforcement() {
+fn setup_test() -> (Env, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
+    let creator = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let verifier = Address::generate(&env);
     (env, creator, contributor, verifier)
 }
 
@@ -107,7 +111,7 @@ fn test_tags_stored_and_retrieved() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -135,7 +139,7 @@ fn test_empty_tags_valid() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -168,7 +172,7 @@ fn test_five_tags_allowed() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -200,7 +204,7 @@ fn test_too_many_tags_panics() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 }
 
@@ -215,7 +219,10 @@ fn test_get_bounties_by_creator_returns_all() {
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
 
-    assert_eq!(client.get_bounties_by_creator(&creator, &None, &50).0.len(), 0);
+    assert_eq!(
+        client.get_bounties_by_creator(&creator, &None, &50).0.len(),
+        0
+    );
 
     let id1 = make_bounty(&client, &env, &creator, "b1", None);
     let id2 = make_bounty(&client, &env, &creator, "b2", None);
@@ -256,7 +263,13 @@ fn test_get_bounties_by_creator_unknown_address_empty() {
     let client = MergeMintContractClient::new(&env, &contract_id);
 
     let stranger = Address::generate(&env);
-    assert_eq!(client.get_bounties_by_creator(&stranger, &None, &50).0.len(), 0);
+    assert_eq!(
+        client
+            .get_bounties_by_creator(&stranger, &None, &50)
+            .0
+            .len(),
+        0
+    );
 }
 
 // ===========================================================================
@@ -422,7 +435,7 @@ fn test_create_bounty_rejects_past_deadline() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 }
 
@@ -446,7 +459,7 @@ fn test_create_bounty_accepts_future_deadline() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 }
 
@@ -474,7 +487,7 @@ fn test_create_bounty() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
     let bounty = client.get_bounty(&bounty_id).unwrap();
@@ -482,7 +495,8 @@ fn test_create_bounty() {
     assert_eq!(bounty.creator, creator);
     assert!(bounty.assignees.is_empty());
 
-    let meta = client.get_bounty_meta(&bounty_id).unwrap();
+    let metas = client.get_bounty_metas(&Vec::from_array(&env, [bounty_id.clone()]));
+    let meta = metas.get(0).unwrap().unwrap();
     assert_eq!(meta.title, Symbol::new(&env, "test_b"));
     assert_eq!(meta.description, String::from_str(&env, "desc"));
 }
@@ -511,7 +525,7 @@ fn test_create_bounty_rejects_zero_reward() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 }
 
@@ -535,7 +549,7 @@ fn test_create_bounty_rejects_negative_reward() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 }
 
@@ -559,7 +573,7 @@ fn test_create_bounty_rejects_below_minimum_reward() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 }
 
@@ -581,7 +595,7 @@ fn test_claim_bounty() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
     client.claim_bounty(&contributor, &bounty_id);
 
@@ -610,7 +624,7 @@ fn test_creator_cannot_claim_own_bounty() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
     client.claim_bounty(&creator, &bounty_id);
 }
@@ -635,7 +649,7 @@ fn test_bounty_count() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
     assert_eq!(client.get_bounty_count(), 1);
     client.create_bounty(
@@ -650,7 +664,7 @@ fn test_bounty_count() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
     assert_eq!(client.get_bounty_count(), 2);
 }
@@ -814,10 +828,14 @@ fn test_claim_bounty_rejects_low_reputation() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
-    let bounty_id = client.get_bounties_by_creator(&creator, &None, &50).0.get(0).unwrap();
+    let bounty_id = client
+        .get_bounties_by_creator(&creator, &None, &50)
+        .0
+        .get(0)
+        .unwrap();
     // Contributor has 0 reputation — must be rejected.
     client.claim_bounty(&contributor, &bounty_id);
 }
@@ -865,7 +883,9 @@ fn test_status_index_open_on_create() {
 
     let bounty_id = make_bounty(&client, &env, &creator, "status_open", None);
 
-    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0;
+    let open_ids = client
+        .get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50)
+        .0;
     assert_eq!(open_ids.len(), 1);
     assert_eq!(open_ids.get(0).unwrap(), bounty_id);
 }
@@ -887,8 +907,12 @@ fn test_status_index_moves_on_cancel() {
     );
     client.cancel_bounty(&creator, &bounty_id);
 
-    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0;
-    let cancelled_ids = client.get_bounties_by_status(&Symbol::new(&env, "cancelled"), &None, &50).0;
+    let open_ids = client
+        .get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50)
+        .0;
+    let cancelled_ids = client
+        .get_bounties_by_status(&Symbol::new(&env, "cancelled"), &None, &50)
+        .0;
     assert_eq!(open_ids.len(), 0);
     assert_eq!(cancelled_ids.len(), 1);
     assert_eq!(cancelled_ids.get(0).unwrap(), bounty_id);
@@ -1089,7 +1113,7 @@ fn test_double_complete_panics() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
     // Bounty is "open", not "in_progress" — must panic.
@@ -1117,7 +1141,9 @@ fn test_status_count_open_on_create() {
     let _bounty_id = make_bounty(&client, &env, &creator, "sc_open", None);
 
     let open_count = client.get_status_count(&Symbol::new(&env, "open"));
-    let open_ids = client.get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0;
+    let open_ids = client
+        .get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50)
+        .0;
     assert_eq!(open_count, open_ids.len(), "count matches index length");
     assert_eq!(open_count, 1, "exactly one open bounty");
 }
@@ -1148,7 +1174,8 @@ fn test_status_count_across_transitions() {
     assert_eq!(
         client.get_status_count(&Symbol::new(&env, "in_progress")),
         client
-            .get_bounties_by_status(&Symbol::new(&env, "in_progress"), &None, &50).0
+            .get_bounties_by_status(&Symbol::new(&env, "in_progress"), &None, &50)
+            .0
             .len(),
     );
     // and cancel it directly: open=0→1, cancelled=0→1
@@ -1168,7 +1195,8 @@ fn test_status_count_across_transitions() {
     assert_eq!(
         client.get_status_count(&Symbol::new(&env, "cancelled")),
         client
-            .get_bounties_by_status(&Symbol::new(&env, "cancelled"), &None, &50).0
+            .get_bounties_by_status(&Symbol::new(&env, "cancelled"), &None, &50)
+            .0
             .len(),
     );
 }
@@ -1189,7 +1217,8 @@ fn test_status_count_matches_index_length() {
     assert_eq!(
         client.get_status_count(&Symbol::new(&env, "open")),
         client
-            .get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50).0
+            .get_bounties_by_status(&Symbol::new(&env, "open"), &None, &50)
+            .0
             .len(),
     );
 }
@@ -1214,7 +1243,7 @@ fn test_assignee_cannot_self_verify() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
     client.claim_bounty(&contributor, &bounty_id);
@@ -1377,7 +1406,7 @@ fn test_resolve_dispute_complete_pays_from_arbitrator() {
         &1,
         &None,
         &1,
-        &Vec::new(env),
+        &Vec::new(&env),
     );
 
     client.claim_bounty(&contributor, &bounty_id);
@@ -1428,12 +1457,12 @@ fn make_multi_bounty_with_token(
     client: &MergeMintContractClient,
     env: &Env,
     creator: &Address,
-    verifier: &Address,
+    contract_id: &Address,
     tag: &str,
     reward_amount: i128,
     max_assignees: u32,
 ) -> (crate::types::BountyId, Address) {
-    let token_addr = create_token_and_mint(env, creator, verifier, reward_amount);
+    let token_addr = create_token_and_mint(env, creator, contract_id, reward_amount);
     let bounty_id = client.create_bounty(
         creator,
         &Symbol::new(env, tag),
@@ -1456,7 +1485,7 @@ fn make_multi_bounty_with_token(
 /// reward_amount exactly (no integer-division loss for an even split).
 #[test]
 fn test_two_assignees_equal_share_bp() {
-    let (env, creator, contributor1, verifier) = setup_test();
+    let (env, creator, contributor1, _verifier) = setup_test();
     let contributor2 = Address::generate(&env);
     let contract_id = env.register(MergeMintContract, ());
     let client = MergeMintContractClient::new(&env, &contract_id);
@@ -1466,7 +1495,7 @@ fn test_two_assignees_equal_share_bp() {
         &client,
         &env,
         &creator,
-        &verifier,
+        &contract_id,
         "two_eq",
         reward_amount,
         2,
@@ -1505,7 +1534,7 @@ fn test_two_assignees_payout_sum_equals_reward() {
         &client,
         &env,
         &creator,
-        &verifier,
+        &contract_id,
         "two_payout",
         reward_amount,
         2,
@@ -1536,7 +1565,7 @@ fn test_two_assignees_payout_sum_equals_reward() {
 /// Total share_bp = 3_334 + 3_333 + 3_333 = 10_000.
 #[test]
 fn test_three_assignees_first_absorbs_remainder_share_bp() {
-    let (env, creator, contributor1, verifier) = setup_test();
+    let (env, creator, contributor1, _verifier) = setup_test();
     let contributor2 = Address::generate(&env);
     let contributor3 = Address::generate(&env);
     let contract_id = env.register(MergeMintContract, ());
@@ -1547,7 +1576,7 @@ fn test_three_assignees_first_absorbs_remainder_share_bp() {
         &client,
         &env,
         &creator,
-        &verifier,
+        &contract_id,
         "three_rem",
         reward_amount,
         3,
@@ -1600,7 +1629,7 @@ fn test_three_assignees_payout_sum_with_divisible_reward() {
         &client,
         &env,
         &creator,
-        &verifier,
+        &contract_id,
         "three_div",
         reward_amount,
         3,
@@ -1654,7 +1683,7 @@ fn test_three_assignees_payout_integer_division_loss_documented() {
         &client,
         &env,
         &creator,
-        &verifier,
+        &contract_id,
         "three_loss",
         reward_amount,
         3,
@@ -1707,7 +1736,7 @@ fn test_two_assignees_uneven_reward_integer_division_loss() {
         &client,
         &env,
         &creator,
-        &verifier,
+        &contract_id,
         "two_odd",
         reward_amount,
         2,
@@ -1770,6 +1799,7 @@ fn make_multisig_bounty(
         &1,
         &Some(verifiers),
         &threshold,
+        &Vec::new(env),
     );
     (bounty_id, token_addr, v1, v2, v3)
 }
@@ -1919,13 +1949,13 @@ fn test_escrow_balance_invariant() {
             &1,
             &None,
             &1,
+            &Vec::new(&env),
         )
     };
 
     // Helper closure: compute expected balance = sum of open+in_progress rewards.
-    let expected_balance = |open: u32, in_progress: u32| -> i128 {
-        reward * (open as i128 + in_progress as i128)
-    };
+    let expected_balance =
+        |open: u32, in_progress: u32| -> i128 { reward * (open as i128 + in_progress as i128) };
 
     // Step 1: create all three — all open.
     let b1 = make("inv1");

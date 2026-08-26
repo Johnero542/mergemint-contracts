@@ -224,6 +224,7 @@ mod tests {
             required_verifiers: None,
             approval_threshold: 1,
             tags: Vec::new(&env),
+            milestones: Vec::new(&env),
         };
 
         // Encode the full bounty

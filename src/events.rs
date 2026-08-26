@@ -78,8 +78,6 @@ pub fn emit_milestone_completed(
     amount: &i128,
 ) {
     let topic = Symbol::new(env, "milestone_completed");
-    env.events().publish(
-        (topic, milestone_index),
-        (bounty_id.clone(), *amount),
-    );
+    env.events()
+        .publish((topic, milestone_index), (bounty_id.clone(), *amount));
 }

@@ -1,6 +1,3 @@
-use crate::contract::state::{BountyId, BountyMeta, BOUNTIES};
-use cosmwasm_std::{Deps, Env, StdResult};
-
 /// Maximum items returnable in a single paginated call.
 ///
 /// Kept equal to `storage::PAGE_SIZE` so that a single "next page" call never
@@ -19,7 +16,11 @@ fn paginate(
     cursor: Option<u32>,
     limit: u32,
 ) -> (Vec<BountyId>, Option<u32>) {
-    let effective_limit = if limit == 0 || limit > MAX_LIMIT { MAX_LIMIT } else { limit };
+    let effective_limit = if limit == 0 || limit > MAX_LIMIT {
+        MAX_LIMIT
+    } else {
+        limit
+    };
     let start = cursor.unwrap_or(0);
     let total = all_ids.len();
     let mut result = Vec::new(env);
@@ -28,7 +29,11 @@ fn paginate(
     }
     let end = {
         let e = start + effective_limit;
-        if e > total { total } else { e }
+        if e > total {
+            total
+        } else {
+            e
+        }
     };
     let mut i = start;
     while i < end {
@@ -44,12 +49,6 @@ impl MergeMintContract {
     pub fn get_bounty(env: Env, bounty_id: BountyId) -> Option<Bounty> {
         storage::get_bounty(&env, &bounty_id)
     }
-
-pub fn get_bounty_metas(deps: Deps, _env: Env, ids: Vec<BountyId>) -> StdResult<Vec<Option<BountyMeta>>> {
-    ids.into_iter()
-        .map(|id| BOUNTIES.may_load(deps.storage, id))
-        .collect()
-}
 
     pub fn get_bounty_metas(env: Env, ids: Vec<BountyId>) -> Vec<Option<BountyMeta>> {
         let mut result: Vec<Option<BountyMeta>> = Vec::new(&env);
@@ -191,5 +190,4 @@ pub fn get_bounty_metas(deps: Deps, _env: Env, ids: Vec<BountyId>) -> StdResult<
         let all = storage::get_creator_bounties(&env, &creator);
         paginate(&env, all, cursor, limit)
     }
-    results
 }
