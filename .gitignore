@@ -15,3 +15,30 @@ Thumbs.db
 
 # Misc
 somzilla.md
+
+# Test snapshots (auto-generated)
+*.snap
+
+# Coverage reports
+lcov.info
+coverage/
+*.profraw
+*.profdata
+
+# Node / JS artifacts (if any tooling is added)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Hardhat / Foundry artifacts
+artifacts/
+cache/
+out/
+
+# Misc editor files
+*.swp
+*.swo
+*~
+.env
+.env.*
+!.env.example
