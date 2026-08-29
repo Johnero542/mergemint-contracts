@@ -16,29 +16,31 @@ Thumbs.db
 # Misc
 somzilla.md
 
-# Test snapshots (auto-generated)
-*.snap
-
-# Coverage reports
-lcov.info
-coverage/
-*.profraw
-*.profdata
-
-# Node / JS artifacts (if any tooling is added)
+# JavaScript / Node
 node_modules/
-npm-debug.log
-yarn-error.log
+dist/
+*.log
 
-# Hardhat / Foundry artifacts
-artifacts/
-cache/
-out/
+# Test snapshots (Jest / Vitest)
+*.snap
+__snapshots__/
 
-# Misc editor files
-*.swp
-*.swo
-*~
+# Code coverage
+coverage/
+.nyc_output/
+
+# End-to-end test artefacts
+playwright-report/
+test-results/
+
+# WebAssembly build output
+*.wasm
+pkg/
+
+# Monorepo / bundler caches
+.turbo/
+.next/
+.parcel-cache/
+
+# Environment secrets (keep .env.example tracked)
 .env
-.env.*
-!.env.example
